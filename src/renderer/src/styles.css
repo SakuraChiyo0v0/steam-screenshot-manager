@@ -1,0 +1,92 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #f6f7f9;
+  color: #1c1f23;
+}
+
+.panel {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 28px 32px 48px;
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0 0 6px;
+}
+
+h2 {
+  font-size: 15px;
+  margin: 22px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #dfe3e8;
+}
+
+.hint {
+  color: #5c6672;
+  font-size: 13px;
+}
+
+.message {
+  background: #eef4ff;
+  border: 1px solid #c7d9ff;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.boundary {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  color: #33414f;
+  background: #f0f2f5;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 6px 14px;
+  margin: 0;
+}
+
+dt {
+  color: #5c6672;
+}
+
+dd {
+  margin: 0;
+}
+
+.path {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button {
+  font: inherit;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid #c3cad3;
+  background: #fff;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f0f2f5;
+}

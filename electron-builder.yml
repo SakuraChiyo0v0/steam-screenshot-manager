@@ -1,0 +1,32 @@
+# electron-builder 配置（Windows x64 为首版目标平台）
+#
+# 工程基础阶段的出口要求：打包产物必须能启动，且数据库读写与开发运行一致。
+# 应用运行时不依赖任何 node_modules（SQLite 使用 Electron 内置的 node:sqlite），
+# 因此这里只需要打进 out/ 构建产物与 package.json。
+
+appId: com.sakurachiyo.steam-screenshot-manager
+productName: Steam截图管理器
+copyright: Copyright © 2026 SakuraChiyo0v0
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+asar: true
+
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: steam-screenshot-manager-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Steam截图管理器

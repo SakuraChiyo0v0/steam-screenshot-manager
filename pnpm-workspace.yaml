@@ -1,0 +1,12 @@
+# pnpm 设置文件。
+#
+# pnpm 11 起，包管理器设置统一放在本文件，package.json 的 pnpm 字段不再被读取。
+# pnpm 默认拦截依赖的构建脚本（供应链防护），这里逐项声明放行与否：
+#   - electron：下载 Electron 运行时二进制，开发与打包都必需 → 放行；
+#   - esbuild：安装平台原生二进制，Vite / Vitest 依赖 → 放行；
+#   - electron-winstaller：只服务 electron-builder 的 Squirrel.Windows 目标，
+#     本项目使用 NSIS 与便携产物 → 不放行。
+allowBuilds:
+  electron: true
+  esbuild: true
+  electron-winstaller: false

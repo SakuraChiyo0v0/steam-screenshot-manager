@@ -1,0 +1,28 @@
+schema: spec-driven
+
+context: |
+  项目：Steam Screenshot Manager —— 本地优先的 Steam 截图管理与 WebDAV 备份桌面应用。
+  技术栈：Electron + TypeScript + React + 本地 SQLite，Windows x64 优先，包管理器 pnpm。
+  说明性文档、代码注释、commit message 一律使用中文；commit 遵循 Conventional Commits（中文正文）。
+  规范来源：README.md、docs/product-plan.md、docs/architecture.md、docs/sync-protocol.md、
+  docs/implementation-plan.md、docs/review-checklist.md；真实数据事实见 docs/evidence/real-data-structure.md。
+
+  数据保护红线（任何变更不得违反）：
+  - Steam 来源只读，不移动、覆盖、重压缩，不修改 Steam 的 VDF；
+  - 原始字节完整保存；缩略图是可丢弃缓存，不得计入原件；
+  - 同名不同内容不覆盖，同画面不同编码都保留；
+  - 本机文件消失不传播远端删除，首版没有跨端永久删除；
+  - 完整性验证通过才显示对应完成状态；
+  - 密码、访问令牌、设备绝对路径不进入远端清单、普通日志或诊断包。
+
+  结论层级（实施计划 2.1）：代码已实现 < 隔离验证通过 < 真实样本核数通过 < 真实服务通过 < 跨电脑通过。
+  不得跨层级表述；缺少真实条件时必须挂账，不得给完整通过结论。
+
+rules:
+  proposal:
+    - 用中文书写；
+    - 明确本次变更的边界与非目标，并引用受影响的 docs/ 章节；
+    - 不得扩大首版范围（录像、存档、跨端删除、多用户服务等均为范围外）。
+  tasks:
+    - 拆成可独立验证的最小步骤，每步写明验证方式；
+    - 涉及真实数据或真实服务的步骤必须注明证据来源与挂账条件。

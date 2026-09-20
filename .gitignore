@@ -1,0 +1,35 @@
+# 依赖与构建产物
+node_modules/
+dist/
+out/
+release/
+build/
+.vite/
+coverage/
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+pnpm-debug.log*
+*.tsbuildinfo
+
+# 本地环境
+.env
+.env.local
+.env.*.local
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 测试与样本数据：真实截图、临时图库、隔离测试目录一律不入库
+# （实施计划第 3 节：截图证据、测试数据和大文件不默认提交 Git）
+.sample-data/
+sample-data/
+test-library/
+tmp-library/
+*.local.json
+
+# 本地凭据（WebDAV 密码等绝不入库）
+credentials/
+secrets/
