@@ -13,13 +13,18 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { BrowserWindow, app, shell } from 'electron'
 import { readSettings } from '@core/settings/settings-store'
+import { registerAssetProtocol, registerAssetScheme } from './asset-protocol'
 import { disposeAppContext, initAppContext, type AppContext } from './app-context'
 import { registerIpcHandlers } from './ipc'
+import { readVerifyScanTarget, runVerifyScan } from './verify-scan'
 
 const SELF_CHECK_FLAG = '--self-check'
 const SELF_CHECK_TIMEOUT_MS = 30_000
 
 let mainWindow: BrowserWindow | null = null
+
+// 必须在 app ready 之前注册自定义协议的特权，否则 <img> 无法使用 ssm-asset://
+registerAssetScheme()
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -189,7 +194,12 @@ async function runSelfCheck(): Promise<void> {
 }
 
 // 单实例：拿不到锁说明已有实例在运行，本次启动直接退出。
-const hasSingleInstanceLock = app.requestSingleInstanceLock()
+const isToolMode =
+  readVerifyScanTarget(process.argv) !== null || process.argv.includes(SELF_CHECK_FLAG)
+
+// 工具模式（自检 / 扫描验证）不参与单实例锁：它们不创建窗口，
+// 也不应因为界面实例正在运行而无法执行。
+const hasSingleInstanceLock = isToolMode ? true : app.requestSingleInstanceLock()
 
 if (!hasSingleInstanceLock) {
   app.quit()
@@ -199,6 +209,13 @@ if (!hasSingleInstanceLock) {
   })
 
   app.whenReady().then(async () => {
+    // 真机扫描验证入口（工具模式，不创建窗口）
+    const verifyTarget = readVerifyScanTarget(process.argv)
+    if (verifyTarget) {
+      await runVerifyScan(verifyTarget)
+      return
+    }
+
     if (process.argv.includes(SELF_CHECK_FLAG)) {
       await runSelfCheck()
       return
@@ -226,6 +243,7 @@ if (!hasSingleInstanceLock) {
     )
 
     registerIpcHandlers()
+    registerAssetProtocol()
     mainWindow = createWindow()
 
     app.on('activate', () => {

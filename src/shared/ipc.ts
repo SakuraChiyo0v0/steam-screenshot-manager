@@ -6,28 +6,80 @@
  */
 
 import type { Err, Ok } from './errors'
-import type { AppInfo, DbHealth, LibraryRootState, Settings } from './types'
+import type {
+  AccountSummaryDto,
+  AppInfo,
+  AssetSortType,
+  DbHealth,
+  DiscoveredRootDto,
+  GalleryAssetDto,
+  GalleryGameDto,
+  GalleryPageDto,
+  LibraryRootState,
+  LibraryStatsDto,
+  RegisteredSourceDto,
+  ScanProgressDto,
+  ScanStatusDto,
+  ScanSummaryDto,
+  Settings
+} from './types'
 
 export const IPC_CHANNELS = {
+  // 应用与设置（工程基础阶段）
   appGetInfo: 'app:getInfo',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   libraryPickRoot: 'library:pickRoot',
-  dbHealth: 'db:health'
+  dbHealth: 'db:health',
+  // 来源
+  sourcesDiscover: 'sources:discover',
+  sourcesList: 'sources:list',
+  sourcesAdd: 'sources:add',
+  sourcesRemove: 'sources:remove',
+  // 扫描
+  scanStart: 'scan:start',
+  scanCancel: 'scan:cancel',
+  scanStatus: 'scan:status',
+  // 图库查询
+  libraryStats: 'library:stats',
+  libraryListGames: 'library:listGames',
+  libraryListAccounts: 'library:listAccounts',
+  libraryListAssets: 'library:listAssets',
+  libraryGetAsset: 'library:getAsset'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
 
-/** 暴露给渲染层的方法名白名单。 */
+/** 主进程主动推送的通道（不参与 invoke 白名单）。 */
+export const IPC_EVENTS = {
+  scanProgress: 'scan:progress'
+} as const
+
+/** 暴露给渲染层的方法名白名单（invoke 型）。 */
 export const EXPOSED_METHODS = [
   'getAppInfo',
   'getSettings',
   'updateSettings',
   'pickLibraryRoot',
-  'runDbHealth'
+  'runDbHealth',
+  'discoverSources',
+  'listSources',
+  'addSource',
+  'removeSource',
+  'startScan',
+  'cancelScan',
+  'getScanStatus',
+  'getLibraryStats',
+  'listGames',
+  'listAccounts',
+  'listAssets',
+  'getAsset'
 ] as const
 
 export type ExposedMethod = (typeof EXPOSED_METHODS)[number]
+
+/** 事件型方法单独列出：它们不走 invoke，也不需要通道映射校验。 */
+export const EVENT_METHODS = ['onScanProgress', 'offScanProgress'] as const
 
 /** 方法名到通道的映射：preload 与主进程共用，避免两处清单漂移。 */
 export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
@@ -35,10 +87,52 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   getSettings: IPC_CHANNELS.settingsGet,
   updateSettings: IPC_CHANNELS.settingsUpdate,
   pickLibraryRoot: IPC_CHANNELS.libraryPickRoot,
-  runDbHealth: IPC_CHANNELS.dbHealth
+  runDbHealth: IPC_CHANNELS.dbHealth,
+  discoverSources: IPC_CHANNELS.sourcesDiscover,
+  listSources: IPC_CHANNELS.sourcesList,
+  addSource: IPC_CHANNELS.sourcesAdd,
+  removeSource: IPC_CHANNELS.sourcesRemove,
+  startScan: IPC_CHANNELS.scanStart,
+  cancelScan: IPC_CHANNELS.scanCancel,
+  getScanStatus: IPC_CHANNELS.scanStatus,
+  getLibraryStats: IPC_CHANNELS.libraryStats,
+  listGames: IPC_CHANNELS.libraryListGames,
+  listAccounts: IPC_CHANNELS.libraryListAccounts,
+  listAssets: IPC_CHANNELS.libraryListAssets,
+  getAsset: IPC_CHANNELS.libraryGetAsset
 }
 
 export type IpcResult<T> = Ok<T> | Err
+
+export interface ScanStartPayload {
+  readonly sourceId: string
+  /** 为空表示扫描该来源下全部有截图的账号 */
+  readonly accountIds?: readonly string[]
+}
+
+export interface ListGamesPayload {
+  readonly query?: string | null
+  readonly installed?: boolean | null
+  readonly accountKey?: string | null
+}
+
+export interface ListAssetsPayload {
+  readonly gameKey?: string | null
+  readonly accountKey?: string | null
+  readonly installed?: boolean | null
+  readonly query?: string | null
+  readonly sort?: AssetSortType
+  readonly cursor?: string | null
+  readonly limit?: number
+}
+
+export interface RemoveSourcePayload {
+  readonly sourceId: string
+}
+
+export interface AssetIdPayload {
+  readonly assetId: string
+}
 
 /** 渲染层可用的接口，由 preload 注入到 window.api。 */
 export interface RendererApi {
@@ -47,4 +141,24 @@ export interface RendererApi {
   updateSettings(patch: Partial<Settings>): Promise<IpcResult<Settings>>
   pickLibraryRoot(): Promise<IpcResult<LibraryRootState>>
   runDbHealth(): Promise<IpcResult<DbHealth>>
+
+  discoverSources(): Promise<IpcResult<DiscoveredRootDto[]>>
+  listSources(): Promise<IpcResult<RegisteredSourceDto[]>>
+  /** 打开目录选择并登记来源；取消时返回当前来源列表状态 */
+  addSource(): Promise<IpcResult<RegisteredSourceDto[]>>
+  removeSource(payload: RemoveSourcePayload): Promise<IpcResult<RegisteredSourceDto[]>>
+
+  startScan(payload: ScanStartPayload): Promise<IpcResult<ScanSummaryDto>>
+  cancelScan(): Promise<IpcResult<ScanStatusDto>>
+  getScanStatus(): Promise<IpcResult<ScanStatusDto>>
+
+  getLibraryStats(): Promise<IpcResult<LibraryStatsDto>>
+  listGames(payload?: ListGamesPayload): Promise<IpcResult<GalleryGameDto[]>>
+  listAccounts(): Promise<IpcResult<AccountSummaryDto[]>>
+  listAssets(payload?: ListAssetsPayload): Promise<IpcResult<GalleryPageDto>>
+  getAsset(payload: AssetIdPayload): Promise<IpcResult<GalleryAssetDto>>
+
+  /** 订阅扫描进度事件；同一时刻只保留一个监听器 */
+  onScanProgress(listener: (progress: ScanProgressDto) => void): void
+  offScanProgress(): void
 }

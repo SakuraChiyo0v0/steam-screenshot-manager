@@ -14,6 +14,14 @@ export const ERROR_CODES = {
   LIB_DISK_FULL: 'LIB_DISK_FULL',
   /** 数据库损坏或迁移失败 */
   LIB_DB_CORRUPT: 'LIB_DB_CORRUPT',
+  /** 来源根目录不存在或不可读 */
+  SRC_NOT_FOUND: 'SRC_NOT_FOUND',
+  /** 来源目录权限不足或读取失败 */
+  SRC_UNREADABLE: 'SRC_UNREADABLE',
+  /** VDF/ACF/shortcuts.vdf 解析失败 */
+  SRC_VDF_PARSE: 'SRC_VDF_PARSE',
+  /** 已有同类任务在执行 */
+  JOB_RUNNING: 'JOB_RUNNING',
   /** 主进程未预期的内部错误 */
   APP_INTERNAL: 'APP_INTERNAL'
 } as const
@@ -32,6 +40,10 @@ export const ERROR_META: Readonly<Record<ErrorCode, ErrorCodeMeta>> = {
   LIB_PATH_INVALID: { message: '路径不合法或与来源重叠', retriable: false },
   LIB_DISK_FULL: { message: '目标磁盘空间不足', retriable: true },
   LIB_DB_CORRUPT: { message: '数据库损坏或迁移失败', retriable: false },
+  SRC_NOT_FOUND: { message: '来源目录不存在或不可读', retriable: true },
+  SRC_UNREADABLE: { message: '来源目录读取失败', retriable: true },
+  SRC_VDF_PARSE: { message: 'VDF/ACF 文件解析失败', retriable: false },
+  JOB_RUNNING: { message: '已有同类任务正在执行', retriable: true },
   APP_INTERNAL: { message: '应用内部错误', retriable: false }
 }
 

@@ -38,6 +38,89 @@ export const MIGRATIONS: readonly Migration[] = [
         )
       `)
     }
+  },
+  {
+    version: 2,
+    description: '建立索引表：profiles、games、sources、assets、source_files',
+    up(db) {
+      // 账号身份。accountKey 形如 steam-<AccountID>，创建后固定。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS profiles (
+          account_key       TEXT PRIMARY KEY,
+          steam_account_id  TEXT NOT NULL,
+          steam_id64        TEXT,
+          account_name      TEXT,
+          persona_name      TEXT,
+          updated_at        TEXT NOT NULL
+        )
+      `)
+
+      // 游戏身份。steam 游戏为 steam-<AppID>，非 Steam 快捷方式为 shortcut-<gameID>。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS games (
+          game_key    TEXT PRIMARY KEY,
+          app_id      TEXT,
+          kind        TEXT NOT NULL,
+          name        TEXT NOT NULL,
+          name_source TEXT NOT NULL,
+          installed   INTEGER NOT NULL DEFAULT 0,
+          updated_at  TEXT NOT NULL
+        )
+      `)
+
+      // 来源根目录。root_path 只在本机数据库保存，不进远端清单、也不返回渲染层。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS sources (
+          source_id        TEXT PRIMARY KEY,
+          root_path        TEXT NOT NULL,
+          kind             TEXT NOT NULL,
+          created_at       TEXT NOT NULL,
+          last_scan_at     TEXT,
+          last_scan_status TEXT,
+          last_scan_error  TEXT
+        )
+      `)
+
+      // 逻辑资产：账号＋游戏＋完整 SHA-256 唯一。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS assets (
+          asset_id            TEXT PRIMARY KEY,
+          account_key         TEXT NOT NULL,
+          game_key            TEXT NOT NULL,
+          sha256              TEXT NOT NULL,
+          bytes               INTEGER NOT NULL,
+          ext                 TEXT NOT NULL,
+          width               INTEGER,
+          height              INTEGER,
+          captured_at         TEXT,
+          capture_time_source TEXT NOT NULL,
+          created_at          TEXT NOT NULL,
+          UNIQUE (account_key, game_key, sha256)
+        )
+      `)
+
+      // 来源文件：同一资产可有多个来源。present 是可撤销状态，来源不可达时不更新。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS source_files (
+          source_file_id TEXT PRIMARY KEY,
+          source_id      TEXT NOT NULL,
+          account_key    TEXT NOT NULL,
+          asset_id       TEXT NOT NULL,
+          relative_path  TEXT NOT NULL,
+          size           INTEGER NOT NULL,
+          mtime_ms       INTEGER NOT NULL,
+          has_thumbnail  INTEGER NOT NULL DEFAULT 0,
+          present        INTEGER NOT NULL DEFAULT 1,
+          last_seen_at   TEXT NOT NULL,
+          UNIQUE (source_id, account_key, relative_path)
+        )
+      `)
+
+      db.exec('CREATE INDEX IF NOT EXISTS idx_assets_game ON assets (game_key)')
+      db.exec('CREATE INDEX IF NOT EXISTS idx_assets_account_game ON assets (account_key, game_key)')
+      db.exec('CREATE INDEX IF NOT EXISTS idx_source_files_asset ON source_files (asset_id)')
+      db.exec('CREATE INDEX IF NOT EXISTS idx_source_files_source ON source_files (source_id, present)')
+    }
   }
 ]
 

@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
       内容安全策略：只允许同源脚本；样式允许内联（Vite 注入）；
+      img-src 额外允许 ssm-asset:（图片按资产 ID 由主进程供给，渲染层拿不到文件路径）；
       ws: 仅用于开发期渲染层热更新。
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: ssm-asset:; connect-src 'self' ws:"
     />
     <title>Steam 截图管理器</title>
   </head>

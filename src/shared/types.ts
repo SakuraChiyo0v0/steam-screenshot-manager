@@ -3,6 +3,10 @@
  *
  * 注意：本文件同时被渲染层（tsconfig.web，无 node 类型）引用，
  * 因此不得使用 NodeJS.* 等仅在主进程可用的类型。
+ *
+ * 路径约束：图库查询（游戏/资产）**不返回任何文件系统路径**，
+ * 图片一律通过 assetId 对应的 `ssm-asset` 地址获取；
+ * 只有来源管理相关的类型才包含用户自己选择的来源根路径。
  */
 
 /** SQLite 驱动名称。node:sqlite 为 Electron 内置 Node 自带，无需原生模块。 */
@@ -50,4 +54,134 @@ export interface DbHealth {
 export const DEFAULT_SETTINGS: Settings = {
   autoCollect: false,
   libraryRoot: null
+}
+
+/* ------------------------------------------------------------------ *
+ * 来源发现与登记
+ * ------------------------------------------------------------------ */
+
+export interface DiscoveredAccountDto {
+  readonly accountId: string
+  readonly steamId64: string
+  readonly accountName: string | null
+  readonly personaName: string | null
+  readonly hasScreenshotDir: boolean
+  readonly gameDirectoryCount: number
+}
+
+export interface DiscoveredRootDto {
+  readonly rootPath: string
+  readonly kind: 'registry' | 'manual' | 'common'
+  readonly exists: boolean
+  readonly readable: boolean
+  /** 已登记为来源时的 sourceId，未登记为 null */
+  readonly registeredSourceId: string | null
+  readonly accounts: readonly DiscoveredAccountDto[]
+}
+
+export interface RegisteredSourceDto {
+  readonly sourceId: string
+  readonly rootPath: string
+  readonly kind: string
+  readonly accountKeys: readonly string[]
+  readonly lastScanAt: string | null
+  readonly lastScanStatus: string | null
+}
+
+export interface AccountSummaryDto {
+  readonly accountKey: string
+  readonly displayName: string | null
+  readonly assetCount: number
+}
+
+/* ------------------------------------------------------------------ *
+ * 扫描
+ * ------------------------------------------------------------------ */
+
+export interface ScanProgressDto {
+  readonly sourceId: string
+  readonly phase: 'enumerating' | 'hashing'
+  readonly processed: number
+  /** 总量未知时为 null，界面不得伪造百分比 */
+  readonly total: number | null
+  readonly currentFile: string | null
+  readonly failed: number
+}
+
+export interface ScanStatusDto {
+  readonly running: boolean
+  readonly sourceId: string | null
+  readonly phase: 'enumerating' | 'hashing' | null
+  readonly processed: number
+  readonly total: number | null
+  readonly currentFile: string | null
+  readonly failed: number
+  readonly startedAt: string | null
+  readonly finishedAt: string | null
+  readonly cancelled: boolean
+  readonly errorCode: string | null
+  readonly errorMessage: string | null
+}
+
+export interface ScanSummaryDto {
+  readonly sourceId: string
+  readonly scannedAccounts: readonly string[]
+  readonly createdAssets: number
+  readonly sourceFiles: number
+  readonly failures: number
+  readonly missingMarked: number
+  readonly cancelled: boolean
+  readonly durationMs: number
+}
+
+/* ------------------------------------------------------------------ *
+ * 图库查询（不含任何文件系统路径）
+ * ------------------------------------------------------------------ */
+
+export type AssetSortType = 'captured-desc' | 'captured-asc' | 'imported-desc'
+export type CaptureTimeSourceType = 'screenshot-index' | 'file-time' | 'unknown'
+
+export interface GalleryGameDto {
+  readonly gameKey: string
+  readonly name: string
+  /** 副标题：Steam 游戏显示 steam-<AppID>，非 Steam 显示 shortcut-<gameID> */
+  readonly appKeyLabel: string
+  readonly kind: string
+  readonly installed: boolean
+  readonly assetCount: number
+  readonly bytes: number
+  readonly latestCapturedAt: string | null
+  /** 封面地址：该游戏最近一张真实截图；无可用截图时为 null */
+  readonly coverUrl: string | null
+  readonly accounts: readonly string[]
+}
+
+export interface GalleryAssetDto {
+  readonly assetId: string
+  readonly gameKey: string
+  readonly gameName: string
+  readonly accountKey: string
+  readonly fileName: string
+  readonly bytes: number
+  readonly width: number | null
+  readonly height: number | null
+  readonly capturedAt: string | null
+  readonly captureTimeSource: CaptureTimeSourceType
+  /** 来源文件当前是否存在；false 时界面必须显示缺失状态 */
+  readonly available: boolean
+  readonly imageUrl: string
+  readonly thumbnailUrl: string
+}
+
+export interface GalleryPageDto {
+  readonly items: readonly GalleryAssetDto[]
+  readonly nextCursor: string | null
+}
+
+export interface LibraryStatsDto {
+  readonly games: number
+  readonly assets: number
+  readonly bytes: number
+  readonly accounts: number
+  readonly missingFiles: number
 }
