@@ -2,7 +2,9 @@
 
 一个优先在本地运行的 Steam 截图管理应用：自动发现截图，按游戏整理和统计，将原件备份到用户自己的 WebDAV，并在新电脑恢复。
 
-**当前状态：工程基础阶段 工程骨架已落地并验证通过（开发运行与打包产物均可启动、数据库跨重启保留、渲染层无法访问文件系统）；Steam 扫描、图库与 WebDAV 尚未实现。**
+**当前状态：工程基础阶段 工程骨架完成；双主题图库、大图查看器、同步与设置的 UI 预览已实现。当前图库使用静态示例，Steam 扫描、真实图库索引与 WebDAV 同步尚未接入。**
+
+UI 预览：`pnpm dev:ui` 后打开 http://127.0.0.1:4178/；桌面开发运行使用 `pnpm dev`。详见 [UI 交接说明](docs/design/ui-handoff.md) 与 [界面验收](design-qa.md)。
 
 2026-09-20，用户确认采用 **Electron + TypeScript + 本地 SQLite**，项目存放于 `C:\LocalSpace\Projects\My-Proj\original\steam-screenshot-manager`。同日完成规划基线与真实数据勘测，并建立 Git 仓库（GitHub 身份，本地提交，无远端）。工程基础阶段 实施结果见 [工程基础阶段 实施报告](docs/implementation-reports/工程基础阶段.md)。
 
@@ -28,7 +30,7 @@ Steam 登录、在线完整游戏库、Linux/Steam Deck、NAS 网页图库属于
 | 命令 | 作用 | 说明 |
 |---|---|---|
 | `pnpm install` | 安装依赖 | 依赖的构建脚本在 `pnpm-workspace.yaml` 里逐项声明放行与否 |
-| `pnpm dev` | 开发运行 | 渲染层热更新；窗口内是 启动自检面板 |
+| `pnpm dev` | 开发运行 | 渲染层热更新；默认打开图库 UI，原 启动自检在设置 → 工程诊断 |
 | `pnpm typecheck` | 类型检查 | 主进程/预加载与渲染层两份配置分别检查 |
 | `pnpm test` | 单元测试 | Vitest，覆盖迁移、事务、路径校验、设备 ID、IPC 契约 |
 | `pnpm build` | 构建 | 产物在 `out/`（主进程与预加载为 CommonJS） |

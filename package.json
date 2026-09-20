@@ -19,9 +19,12 @@
     "build": "electron-vite build",
     "self-check": "pnpm run build && electron . --self-check",
     "package": "pnpm run build && electron-builder --win",
-    "package:dir": "pnpm run build && electron-builder --win --dir"
+    "package:dir": "pnpm run build && electron-builder --win --dir",
+    "dev:ui": "vite --config vite.ui.config.ts"
   },
   "devDependencies": {
+    "@node-steam/vdf": "^2.2.0",
+    "@phosphor-icons/react": "^2.1.10",
     "@types/node": "^26.6.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
