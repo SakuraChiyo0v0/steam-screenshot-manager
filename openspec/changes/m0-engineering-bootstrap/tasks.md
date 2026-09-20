@@ -39,7 +39,7 @@
 
 ## 6. 打包验证与 工程基础阶段 报告
 
-- [ ] 6.1 用 electron-builder 产出 Windows **安装包**：未完成。`--dir` 免安装产物已产出并验证；NSIS/便携安装器在应用目录打好后因网络请求 600 秒超时失败（见 工程基础阶段 报告第 7 节）。
+- [x] 6.1 用 electron-builder 产出 Windows **安装包**与便携产物：`steam-screenshot-manager-0.1.0-x64-setup.exe`（NSIS，106.4 MB）与 `steam-screenshot-manager-0.1.0-x64-portable.exe`（106.2 MB），整包耗时 49.4 秒。验证：构建退出码 0，便携版 `--self-check` 通过。
 - [x] 6.2 启动打包产物，验证窗口出现、数据库读写与开发运行一致、跨重启数据保留。验证：`packaged: true` 自检 + 窗口标题 `Steam 截图管理器`。
 - [x] 6.3 检查打包产物与仓库内不含 WebDAV 凭据、令牌、真实截图样本与设备绝对来源路径。验证：产物内无 `.jpg/.png/.sqlite3/device.json`；`app.asar` 588 KB 且只含 `out/` 与 `package.json`；仓库源码目录无图片样本。
 - [x] 6.4 按 `docs/implementation-plan.md` §3 模板写 `docs/implementation-reports/工程基础阶段.md`，逐项列出改动文件、实际命令与结果、未验证项、已知风险。
@@ -48,4 +48,4 @@
 ## 7. 收尾
 
 - [x] 7.1 用 `openspec validate` 校验本次变更提案。验证：`Change 'm0-engineering-bootstrap' is valid`。
-- [ ] 7.2 提交 工程基础阶段 改动（不推送、不创建远端），commit message 用中文 Conventional Commits。
+- [x] 7.2 提交 工程基础阶段 改动（不推送、不创建远端），commit message 用中文 Conventional Commits。验证：`git log` 与 `git status` 干净。

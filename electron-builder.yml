@@ -1,8 +1,16 @@
 # electron-builder 配置（Windows x64 为首版目标平台）
 #
 # 工程基础阶段的出口要求：打包产物必须能启动，且数据库读写与开发运行一致。
-# 应用运行时不依赖任何 node_modules（SQLite 使用 Electron 内置的 node:sqlite），
-# 因此这里只需要打进 out/ 构建产物与 package.json。
+#
+# electronDist：直接使用 node_modules/electron/dist 里已解压的 Electron，而不是每次
+# 重新解压下载的压缩包。原因有两个：
+#   1) 本机同时装有 Windows Defender 与 ESET，刚解压出的大量文件会被扫描并短暂占用句柄，
+#      导致 electron-builder 把解压目录改名的步骤间歇性报 EPERM；
+#   2) 省掉一次解压，打包更快，也不依赖网络。
+# 前置条件：必须先执行 pnpm install（它会解压出 node_modules/electron/dist）。
+#
+# 应用运行时依赖为 0（SQLite 使用 Electron 内置的 node:sqlite），
+# 因此产物只需要 out/ 构建结果与 package.json。
 
 appId: com.sakurachiyo.steam-screenshot-manager
 productName: Steam截图管理器
@@ -18,15 +26,21 @@ files:
 
 asar: true
 
+electronDist: node_modules/electron/dist
+
 win:
   target:
     - nsis
     - portable
-  artifactName: steam-screenshot-manager-${version}-${arch}.${ext}
 
 nsis:
+  # 两个目标都产出 .exe，必须用不同文件名，否则会互相覆盖。
+  artifactName: steam-screenshot-manager-${version}-${arch}-setup.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: Steam截图管理器
+
+portable:
+  artifactName: steam-screenshot-manager-${version}-${arch}-portable.${ext}
