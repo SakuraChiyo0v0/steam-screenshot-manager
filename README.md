@@ -85,3 +85,6 @@ src/
 tests/         单元测试
 openspec/      变更提案与能力规格
 ```
+## 许可证
+
+本项目以 **MIT 许可证**发布，详见 [LICENSE](LICENSE)。
