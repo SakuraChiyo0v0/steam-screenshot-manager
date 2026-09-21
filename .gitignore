@@ -39,3 +39,7 @@ docs/evidence/
 docs/reviews/
 docs/implementation-reports/
 docs/design/
+# 内部工作文档：阶段计划、自审清单与界面验收记录，不随仓库发布
+docs/implementation-plan.md
+docs/review-checklist.md
+design-qa.md
