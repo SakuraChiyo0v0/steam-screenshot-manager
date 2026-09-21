@@ -120,7 +120,14 @@ export function parseRetryAfterMs(headers: IncomingMessage['headers']): number |
 }
 
 function isRetriableStatus(status: number): boolean {
-  return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599)
+  // 423 Locked：真实服务在自身索引/杀毒扫描期间会短暂返回，属于可重试
+  return (
+    status === 408 ||
+    status === 423 ||
+    status === 425 ||
+    status === 429 ||
+    (status >= 500 && status <= 599)
+  )
 }
 
 /** 把 HTTP 状态与响应内容映射成稳定错误码。 */

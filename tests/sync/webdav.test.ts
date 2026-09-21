@@ -51,6 +51,10 @@ describe('故障分类', () => {
     expect(classifyDavFailure(500, context).code).toBe('DAV_TIMEOUT')
   })
 
+  it('423 Locked 归为可重试（真实服务在索引/扫描期间会短暂返回）', () => {
+    expect(classifyDavFailure(423, context).code).toBe('DAV_TIMEOUT')
+  })
+
   it('409 归为路径错误（父目录不存在），不可重试', () => {
     const failure = classifyDavFailure(409, context)
     expect(failure.code).toBe('LIB_PATH_INVALID')
