@@ -93,7 +93,8 @@ export const IPC_EVENTS = {
   archiveProgress: 'archive:progress',
   exportProgress: 'export:progress',
   uploadProgress: 'upload:progress',
-  restoreProgress: 'restore:progress'
+  restoreProgress: 'restore:progress',
+  previewReady: 'preview:ready'
 } as const
 
 /** 暴露给渲染层的方法名白名单（invoke 型）。 */
@@ -150,7 +151,9 @@ export const EVENT_METHODS = [
   'onUploadProgress',
   'offUploadProgress',
   'onRestoreProgress',
-  'offRestoreProgress'
+  'offRestoreProgress',
+  'onPreviewReady',
+  'offPreviewReady'
 ] as const
 
 /** 方法名到通道的映射：preload 与主进程共用，避免两处清单漂移。 */
@@ -255,6 +258,11 @@ export interface ConnectRemotePayload {
   readonly libraryId?: string | null
 }
 
+export interface PreviewReadyPayload {
+  readonly assetId: string
+  readonly size: 'preview' | 'mini'
+}
+
 export interface RestoreStartPayload {
   /** 只恢复这些游戏；为空表示全部 */
   readonly gameKeys?: readonly string[]
@@ -324,4 +332,7 @@ export interface RendererApi {
   offUploadProgress(): void
   onRestoreProgress(listener: (status: RestoreStatusDto) => void): void
   offRestoreProgress(): void
+  /** 某张图的预览已生成，界面可以换成更清晰也更轻的预览 */
+  onPreviewReady(listener: (payload: PreviewReadyPayload) => void): void
+  offPreviewReady(): void
 }

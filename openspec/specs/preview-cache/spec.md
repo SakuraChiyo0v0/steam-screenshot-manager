@@ -1,5 +1,8 @@
-## MODIFIED Requirements
+# preview-cache Specification
 
+## Purpose
+TBD - created by archiving change daily-use-polish. Update Purpose after archive.
+## Requirements
 ### Requirement: 预览缓存
 
 系统 MUST 为图库资产生成中等尺寸预览，MUST NOT 在图片请求里同步生成（避免阻塞界面）。
@@ -25,18 +28,3 @@
 - **WHEN** 预览缓存被删除
 - **THEN** 系统不报错，浏览时重新生成
 
-### Requirement: 大列表的内存边界
-
-系统 MUST 限制同一时刻渲染的图片数量，MUST NOT 随列表长度线性增长。
-
-#### Scenario: 查看器缩略图带
-- **WHEN** 相册有数千张截图并打开查看器
-- **THEN** 缩略图带只渲染当前项附近的有限张数，窗口外使用等宽占位保持滚动几何不变
-
-#### Scenario: 离屏卡片
-- **WHEN** 相册滚动到列表中部
-- **THEN** 离屏卡片跳过渲染与绘制，不产生额外的图片解码与图层
-
-#### Scenario: 模态背景
-- **WHEN** 打开大图查看器或数据来源对话框
-- **THEN** 背景使用纯色压暗，不使用要求栅格化整页的背景模糊

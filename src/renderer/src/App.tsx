@@ -250,6 +250,23 @@ export function App() {
     return () => api.offArchiveProgress()
   }, [])
 
+  /**
+   * 预览就绪事件：这张图之前可能因为还没有预览而回退到原图，
+   * 现在换成清晰且更轻的预览（只触发一次，因为预览只会生成一次）。
+   */
+  useEffect(() => {
+    const api = getApi()
+    if (!api) return
+    api.onPreviewReady((payload: { assetId: string; size: 'preview' | 'mini' }) => {
+      const key =
+        payload.size === 'mini'
+          ? IMAGE_FAILURE_KEYS.thumbnail(payload.assetId)
+          : IMAGE_FAILURE_KEYS.original(payload.assetId)
+      setImageAttempts((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
+    })
+    return () => api.offPreviewReady()
+  }, [])
+
   /** 上传进度事件订阅。 */
   useEffect(() => {
     const api = getApi()

@@ -1,0 +1,33 @@
+# gallery-ui-preview Specification
+
+## Purpose
+TBD - created by archiving change ui-gallery-preview. Update Purpose after archive.
+## Requirements
+### Requirement: 双主题等比例图库
+界面 MUST 提供日间、夜间主题；游戏封面与截图网格 MUST 使用统一 16:9 容器，大图 MUST 保留原始比例。
+
+#### Scenario: 切换主题
+- **WHEN** 用户选择日间或夜间
+- **THEN** 所有页面、对话框和查看器统一切换，选中状态可见。
+
+### Requirement: 可操作的大图浏览
+查看器 MUST 提供前后按钮、方向键和底部缩略图带，并展示当前位置；关闭 MUST 恢复入口焦点。
+
+#### Scenario: 切换图片
+- **WHEN** 用户点击缩略图或按左右方向键
+- **THEN** 主图、计数、选中缩略图和信息面板一致更新，边界不越界。
+
+### Requirement: 示例与真实功能隔离
+界面 MUST 明显标记示例数据，MUST NOT 发起收集/上传/导出请求或伪造真实完成状态。
+
+#### Scenario: 预览收集
+- **WHEN** 用户确认示例收集范围
+- **THEN** 仅显示预览反馈，明确没有读取或导入实际文件。
+
+### Requirement: 诊断保持可达
+原有 工程基础阶段 诊断 MUST 通过设置显式进入，不在产品首页自动调用写入操作。
+
+#### Scenario: 浏览器预览
+- **WHEN** 不存在 Electron 通信桥
+- **THEN** 主图库和查看器正常运行，诊断说明桌面环境要求，不抛出未处理异常。
+

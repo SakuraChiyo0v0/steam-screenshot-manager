@@ -1,0 +1,53 @@
+# library-export Specification
+
+## Purpose
+TBD - created by archiving change library-archive-export. Update Purpose after archive.
+## Requirements
+### Requirement: 按规则导出
+
+系统 MUST 支持按游戏名、AppID、年份组织导出目录，MUST 使用图库受管副本优先、来源原件兜底。
+
+#### Scenario: 导出到年份目录
+- **WHEN** 以"游戏名＋年份"规则导出
+- **THEN** 文件出现在 `<目标目录>/<游戏名>/<年份>/<原文件名>`，内容与索引指纹一致
+
+#### Scenario: 时间未知
+- **WHEN** 资产的拍摄时间不可用
+- **THEN** 年份目录使用明确的"时间未知"文案，不伪造年份
+
+#### Scenario: 优先使用图库副本
+- **WHEN** 资产已有受管副本且来源文件已被移走
+- **THEN** 仍然可以导出成功
+
+### Requirement: Windows 路径规范
+
+系统 MUST 处理非法字符、保留名、结尾点与空格，并保证相对路径长度可控。
+
+#### Scenario: 非法字符与保留名
+- **WHEN** 游戏名或文件名包含 `<>:"/\|?*` 或为 `CON`、`NUL` 等保留名
+- **THEN** 片段被规范化为合法名称，导出不失败
+
+#### Scenario: 极端长度
+- **WHEN** 游戏名与文件名都极长
+- **THEN** 各段分别截断，整体相对路径长度有界，扩展名保留
+
+### Requirement: 冲突保留两份
+
+系统 MUST NOT 覆盖导出目录中已存在的文件。
+
+#### Scenario: 同名不同内容
+- **WHEN** 目标路径已存在同名文件且内容不同
+- **THEN** 新文件以追加指纹短码的名字写入，两份都保留，已有文件不被修改
+
+#### Scenario: 同名相同内容
+- **WHEN** 目标路径已存在内容完全相同的文件
+- **THEN** 跳过写入，不产生重复文件
+
+### Requirement: 导出后校验
+
+系统 MUST 在写入后重新计算目标文件指纹并与索引核对。
+
+#### Scenario: 写入后不一致
+- **WHEN** 写入的目标文件指纹与索引不符
+- **THEN** 删除该文件并记为失败，不留半成品
+

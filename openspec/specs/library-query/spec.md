@@ -1,0 +1,53 @@
+# library-query Specification
+
+## Purpose
+TBD - created by archiving change gallery-data-integration. Update Purpose after archive.
+## Requirements
+### Requirement: 游戏列表统计
+
+系统 MUST 提供按游戏聚合的统计，包含图片数、体积、最新拍摄时间与封面资产，MUST 只列出有截图的游戏。
+
+#### Scenario: 列出有截图的游戏
+- **WHEN** 索引中存在若干游戏的截图
+- **THEN** 每个游戏返回名称、显示键、图片数、总字节数、最新拍摄时间与一个可用作封面的资产 ID
+
+#### Scenario: 游戏已卸载
+- **WHEN** 某游戏没有安装清单（已卸载或非 Steam 安装）
+- **THEN** 该游戏仍然出现在列表中，名称回退为显示键，并标记为未安装
+
+#### Scenario: 空库
+- **WHEN** 索引中没有任何资产
+- **THEN** 返回空列表而不是错误，界面显示空态而非失败
+
+### Requirement: 资产查询与筛选
+
+系统 MUST 支持按游戏、账号、排序方式查询资产，MUST 支持分页且返回稳定游标。
+
+#### Scenario: 按游戏查询相册
+- **WHEN** 请求某个游戏的资产列表
+- **THEN** 只返回该游戏的资产，按请求的排序方式排序
+
+#### Scenario: 全部截图的筛选
+- **WHEN** 请求跨游戏资产并按账号或安装状态筛选
+- **THEN** 只返回匹配的资产，且分页游标可继续取下一页
+
+#### Scenario: 稳定游标
+- **WHEN** 在数据未变化时用上一次返回的游标继续查询
+- **THEN** 不出现重复或遗漏的条目
+
+### Requirement: 资产详情
+
+系统 MUST 提供单个资产的展示元数据，MUST NOT 返回文件系统绝对路径。
+
+#### Scenario: 查看资产详情
+- **WHEN** 请求某个资产 ID
+- **THEN** 返回游戏名、显示键、原文件名、字节数、尺寸、拍摄时间与时间来源
+
+#### Scenario: 不泄露路径
+- **WHEN** 检查任何图库查询的返回内容
+- **THEN** 不包含来源根目录或文件的绝对路径
+
+#### Scenario: 原图缺失
+- **WHEN** 资产对应的来源文件当前不存在
+- **THEN** 详情标记为不可用，界面显示缺失状态，不显示为可查看
+

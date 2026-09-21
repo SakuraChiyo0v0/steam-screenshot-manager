@@ -93,6 +93,18 @@ export function Viewer({
     setNotice('')
   }
 
+  /** 迷你预览就绪后让缩略图带重新请求，换成清晰且更轻的版本。 */
+  useEffect(() => {
+    const api = window.api
+    if (!api?.onPreviewReady) return
+    api.onPreviewReady((payload: { assetId: string; size: 'preview' | 'mini' }) => {
+      if (payload.size !== 'mini') return
+      const key = IMAGE_FAILURE_KEYS.thumbnail(payload.assetId)
+      setAttempts((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
+    })
+    return () => api.offPreviewReady()
+  }, [])
+
   const markFailed = (key: string) => {
     setFailed((current) => withFailedImage(current, key))
   }

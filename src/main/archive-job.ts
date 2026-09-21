@@ -17,6 +17,9 @@ import type {
   LibraryCopyStateDto
 } from '@shared/types'
 import { archiveAssets, localCopyState, reconcileLibrary } from '@core/library/archive'
+import { planPreviews } from '@core/library/previews'
+import type { SqliteDatabase } from '@core/db/sqlite'
+import { requestPreview } from './preview-queue'
 import { exportAssets } from '@core/library/export'
 import { checkLibraryRoot } from '@core/settings/library-root'
 import { readSettings } from '@core/settings/settings-store'
@@ -92,6 +95,28 @@ export function requireLibraryRoot(): string {
     throw new AppError('LIB_PATH_INVALID', check.reason)
   }
   return check.normalized
+}
+
+/**
+ * 把缺预览的资产放进后台队列。
+ *
+ * 图库"热"起来之后，浏览时就不用再解码 4K 原图；这里只入队，实际生成仍由限速队列执行。
+ */
+function warmUpPreviews(db: SqliteDatabase, libraryRoot: string): void {
+  try {
+    const pending = planPreviews(db, libraryRoot)
+    for (const candidate of pending.slice(0, 2_000)) {
+      requestPreview({
+        assetId: candidate.assetId,
+        libraryRoot,
+        sha256: candidate.sha256,
+        sourceRoot: candidate.sourceRoot,
+        relativePath: candidate.relativePath
+      })
+    }
+  } catch {
+    // 预热失败不影响归档结果
+  }
 }
 
 export function getArchiveStatus(): ArchiveStatusDto {
@@ -208,6 +233,9 @@ export async function runArchive(input: {
       failed: result.failed
     }
     broadcast(IPC_EVENTS.archiveProgress, archiveStatus)
+
+    // 顺手预热预览：归档结束后把还缺预览的资产放进后台队列（限速执行，不拖慢归档本身）
+    warmUpPreviews(database.db, libraryRoot)
 
     return {
       total: result.total,

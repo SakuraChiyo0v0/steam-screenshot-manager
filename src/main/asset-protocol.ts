@@ -94,6 +94,9 @@ export function registerAssetProtocol(): void {
         }
 
         // 2) 来源自带的缩略图：先给用户看得见的东西，同时排队补预览
+        // 来源缩略图只有约 200px，在卡片尺寸下会发虚，但**先给用户看得见的东西**：
+        // 预览生成完成后会通过 preview:ready 事件自动换成清晰的预览。
+        // （若这里直接返回 4K 原图，一屏 200 张会触发解码风暴，反而把协议响应拖住。）
         if (location.hasThumbnail) {
           try {
             const thumbnailPath = await resolveExistingAssetPath(
@@ -102,6 +105,7 @@ export function registerAssetProtocol(): void {
             )
             if (settings.libraryRoot) {
               requestPreview({
+                assetId,
                 libraryRoot: settings.libraryRoot,
                 sha256: location.sha256,
                 sourceRoot: location.rootPath,
@@ -118,6 +122,7 @@ export function registerAssetProtocol(): void {
         // 3) 都没有：先用原图撑住，后台补预览
         if (settings.libraryRoot) {
           requestPreview({
+            assetId,
             libraryRoot: settings.libraryRoot,
             sha256: location.sha256,
             sourceRoot: location.rootPath,
