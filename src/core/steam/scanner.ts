@@ -19,6 +19,7 @@ import {
   type ScreenshotIndexEntry
 } from './vdf-files'
 import { steamId64FromAccountId } from './discovery'
+import { readAppInfoNamesForRoot } from './appinfo'
 
 export const SUPPORTED_IMAGE_EXTENSIONS: readonly string[] = [
   '.jpg',
@@ -30,7 +31,7 @@ export const SUPPORTED_IMAGE_EXTENSIONS: readonly string[] = [
 
 export type CaptureTimeSource = 'screenshot-index' | 'file-time' | 'unknown'
 export type GameKind = 'steam' | 'non-steam'
-export type GameNameSource = 'app-manifest' | 'shortcut' | 'fallback'
+export type GameNameSource = 'app-manifest' | 'appinfo' | 'shortcut' | 'fallback'
 
 export interface ScanProfile {
   readonly accountId: string
@@ -279,6 +280,8 @@ export async function scanSource(request: ScanRequest): Promise<ScanOutcome> {
   report({ phase: 'enumerating', processed: 0, total: null, currentFile: null, failed: 0 })
 
   const installedApps = collectInstalledApps(rootPath)
+  // 未安装游戏的名称只在 appinfo.vdf 里，appmanifest 覆盖不到
+  const appInfoNames = readAppInfoNamesForRoot(rootPath)
   const accountNames = readAccountNames(rootPath)
   const profiles: ScanProfile[] = []
   const games = new Map<string, ScanGame>()
@@ -315,13 +318,18 @@ export async function scanSource(request: ScanRequest): Promise<ScanOutcome> {
       if (!games.has(gameKey)) {
         const manifestName =
           parsed.kind === 'steam' ? (installedApps.get(parsed.gameId) ?? null) : null
+        const cachedName = parsed.kind === 'steam' ? (appInfoNames.get(parsed.gameId) ?? null) : null
         const shortcutName = nonSteamNames.get(parsed.gameId) ?? null
-        const name = manifestName ?? shortcutName ?? gameKey
         const nameSource: GameNameSource = manifestName
           ? 'app-manifest'
-          : shortcutName
-            ? 'shortcut'
-            : 'fallback'
+          : cachedName
+            ? 'appinfo'
+            : shortcutName
+              ? 'shortcut'
+              : 'fallback'
+        // 产品需求的命名优先级：用户别名 → 缓存/清单名称 → 快捷方式 → 未知游戏（AppID）
+        const fallbackName = parsed.kind === 'steam' ? `未知游戏（${parsed.gameId}）` : gameKey
+        const name = manifestName ?? cachedName ?? shortcutName ?? fallbackName
 
         games.set(gameKey, {
           gameKey,

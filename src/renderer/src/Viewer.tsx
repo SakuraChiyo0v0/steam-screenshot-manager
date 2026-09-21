@@ -7,20 +7,24 @@ import {
   DownloadSimpleIcon,
   ArrowsOutSimpleIcon,
   WarningCircleIcon,
+  ArrowClockwiseIcon
 } from '@phosphor-icons/react'
+import { isAssetUnavailable, withFailedImage, withRetryToken, withoutFailedImage } from '@shared/gallery-view'
 import { Modal } from './Modal'
 import type { ViewerItem } from './view-model'
 
 /**
  * 大图查看器。
  *
- * 输入是真实资产（ViewerItem）。原图缺失时显示缺失状态，不回退到别的图片，
- * 避免让用户以为看到的是这张截图。
+ * 输入是真实资产（ViewerItem）。`available` 只代表查询时的索引状态，图片请求本身
+ * 还会失败（文件被移走、来源断开、图片损坏），因此这里按 assetId 维护加载失败集合：
+ * 失败的图切到"原图当前不可用"并提供重试，绝不继续显示破图或声称文件存在。
+ * 失败状态按 assetId 记录，所以切到下一张不会沿用上一张的错误。
  */
 export function Viewer({
   items,
   initialIndex,
-  onClose,
+  onClose
 }: {
   items: ViewerItem[]
   initialIndex: number
@@ -30,15 +34,23 @@ export function Viewer({
   const [details, setDetails] = useState(false)
   const [actualSize, setActualSize] = useState(false)
   const [notice, setNotice] = useState('')
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set())
+  const [attempts, setAttempts] = useState<Record<string, number>>({})
   const activeThumb = useRef<HTMLButtonElement>(null)
   const shot = items[index]!
+
+  const loadFailed = failed.has(shot.id)
+  const unavailable = isAssetUnavailable(shot.available, loadFailed)
+  const attempt = attempts[shot.id] ?? 0
+
   useEffect(() => {
     activeThumb.current?.scrollIntoView({
       block: 'nearest',
       inline: 'center',
-      behavior: 'smooth',
+      behavior: 'smooth'
     })
   }, [index])
+
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       if (
@@ -51,34 +63,40 @@ export function Viewer({
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault()
         setActualSize(false)
+        setNotice('')
         setIndex((current) =>
           Math.max(
             0,
-            Math.min(
-              items.length - 1,
-              current + (event.key === 'ArrowRight' ? 1 : -1),
-            ),
-          ),
+            Math.min(items.length - 1, current + (event.key === 'ArrowRight' ? 1 : -1))
+          )
         )
       }
     }
     window.addEventListener('keydown', handle)
     return () => window.removeEventListener('keydown', handle)
   }, [items.length])
+
   const go = (next: number) => {
     setIndex(next)
     setActualSize(false)
     setNotice('')
   }
+
+  const markFailed = (assetId: string) => {
+    setFailed((current) => withFailedImage(current, assetId))
+  }
+
+  const retry = (assetId: string) => {
+    setFailed((current) => withoutFailedImage(current, assetId))
+    setAttempts((current) => ({ ...current, [assetId]: (current[assetId] ?? 0) + 1 }))
+    setNotice('已重新请求原图。')
+  }
+
   return (
     <Modal label="截图查看器" onClose={onClose} className="viewer-dialog">
       <div className="viewer-shell">
         <header className="viewer-header">
-          <button
-            className="icon-button"
-            aria-label="关闭查看器"
-            onClick={onClose}
-          >
+          <button className="icon-button" aria-label="关闭查看器" onClick={onClose}>
             <ArrowLeftIcon size={22} />
           </button>
           <div className="viewer-heading">
@@ -88,7 +106,7 @@ export function Viewer({
           <div className="viewer-tools">
             <button
               className={actualSize ? 'selected' : ''}
-              disabled={!shot.available}
+              disabled={unavailable}
               onClick={() => setActualSize(!actualSize)}
             >
               <ArrowsOutSimpleIcon size={18} />
@@ -105,9 +123,7 @@ export function Viewer({
             <button
               onClick={() =>
                 setNotice(
-                  shot.available
-                    ? '导出功能待接入，当前未保存文件。'
-                    : '原图缺失，无法导出。',
+                  unavailable ? '原图不可用，无法导出。' : '导出功能待接入，当前未保存文件。'
                 )
               }
             >
@@ -119,14 +135,29 @@ export function Viewer({
         <div className={`viewer-body ${details ? 'with-details' : ''}`}>
           <div className="image-stage">
             <div className={`image-viewport ${actualSize ? 'actual-size' : ''}`}>
-              {shot.available ? (
-                <img key={shot.id} src={shot.src} alt={shot.title} />
-              ) : (
-                <div className="empty-state">
+              {unavailable ? (
+                <div className="image-unavailable">
                   <WarningCircleIcon size={42} weight="light" />
                   <h2>原图当前不可用</h2>
-                  <p>这条索引对应的来源文件不存在或已不可访问。</p>
+                  <p>
+                    {loadFailed
+                      ? '图片请求失败：文件可能已被移走、来源不可访问，或文件已损坏。索引状态显示为可用，但实际读取失败。'
+                      : '这条索引对应的来源文件不存在或已不可访问。'}
+                  </p>
+                  {loadFailed ? (
+                    <button onClick={() => retry(shot.id)}>
+                      <ArrowClockwiseIcon size={16} />
+                      重新加载
+                    </button>
+                  ) : null}
                 </div>
+              ) : (
+                <img
+                  key={shot.id}
+                  src={withRetryToken(shot.src, attempt)}
+                  alt={shot.title}
+                  onError={() => markFailed(shot.id)}
+                />
               )}
             </div>
             <button
@@ -160,15 +191,17 @@ export function Viewer({
                 <dt>原文件名</dt>
                 <dd className="mono">{shot.filename}</dd>
                 <dt>尺寸</dt>
-                <dd>
-                  {shot.width && shot.height
-                    ? `${shot.width} × ${shot.height}`
-                    : '未知'}
-                </dd>
+                <dd>{shot.width && shot.height ? `${shot.width} × ${shot.height}` : '未知'}</dd>
                 <dt>大小</dt>
                 <dd>{shot.bytesLabel}</dd>
                 <dt>来源文件</dt>
-                <dd>{shot.available ? '存在' : '缺失'}</dd>
+                <dd>
+                  {unavailable
+                    ? loadFailed
+                      ? '索引显示存在，但实际读取失败'
+                      : '缺失'
+                    : '存在'}
+                </dd>
                 <dt>备份状态</dt>
                 <dd>未接入远端存储</dd>
               </dl>
@@ -187,23 +220,30 @@ export function Viewer({
             <span className="muted">方向键切换 · Esc 返回</span>
           </div>
           <div className="filmstrip">
-            {items.map((item, i) => (
-              <button
-                ref={i === index ? activeThumb : null}
-                key={item.id}
-                className={i === index ? 'active' : ''}
-                aria-label={`查看 ${item.title}`}
-                aria-pressed={i === index}
-                onClick={() => go(i)}
-              >
-                {item.available ? (
-                  <img src={item.thumbSrc} alt="" />
-                ) : (
-                  <WarningCircleIcon size={18} />
-                )}
-                <span>{i + 1}</span>
-              </button>
-            ))}
+            {items.map((item, i) => {
+              const thumbUnavailable = isAssetUnavailable(item.available, failed.has(item.id))
+              return (
+                <button
+                  ref={i === index ? activeThumb : null}
+                  key={item.id}
+                  className={i === index ? 'active' : ''}
+                  aria-label={`查看 ${item.title}`}
+                  aria-pressed={i === index}
+                  onClick={() => go(i)}
+                >
+                  {thumbUnavailable ? (
+                    <WarningCircleIcon size={18} />
+                  ) : (
+                    <img
+                      src={withRetryToken(item.thumbSrc, attempts[item.id] ?? 0)}
+                      alt=""
+                      onError={() => markFailed(item.id)}
+                    />
+                  )}
+                  <span>{i + 1}</span>
+                </button>
+              )
+            })}
           </div>
         </footer>
       </div>

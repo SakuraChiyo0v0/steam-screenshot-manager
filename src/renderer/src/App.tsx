@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ImagesIcon,
   SquaresFourIcon,
@@ -22,7 +22,8 @@ import {
   PlayIcon,
   CheckCircleIcon,
   ArrowsClockwiseIcon,
-  TrashIcon
+  TrashIcon,
+  ArrowClockwiseIcon
 } from '@phosphor-icons/react'
 import type {
   AccountSummaryDto,
@@ -35,6 +36,14 @@ import type {
   ScanStatusDto,
   Settings
 } from '@shared/types'
+import {
+  isAssetUnavailable,
+  mergeAssetPages,
+  resolveLibraryViewState,
+  withFailedImage,
+  withRetryToken,
+  withoutFailedImage
+} from '@shared/gallery-view'
 import { call, getApi } from './api'
 import {
   accountLabel,
@@ -92,6 +101,8 @@ export function App() {
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
 
   const [sources, setSources] = useState<RegisteredSourceDto[]>([])
   const [discovered, setDiscovered] = useState<DiscoveredRootDto[]>([])
@@ -108,10 +119,22 @@ export function App() {
   const [diagnostics, setDiagnostics] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
 
+  /**
+   * 请求序号：每次刷新或追加都自增，只有序号仍是最新的响应才允许写入状态。
+   * 这样切换筛选/搜索后到达的旧响应会被丢弃，不会把上一个查询的结果混进来。
+   */
+  const requestToken = useRef(0)
+  /** 图片加载失败集合与重试次数（按 assetId 记录）。 */
+  const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(new Set())
+  const [imageAttempts, setImageAttempts] = useState<Record<string, number>>({})
+  /** 是否已经成功建立过索引（用于区分"尚未扫描的空库"与"筛选无匹配"）。 */
+  const [scannedOnce, setScannedOnce] = useState(false)
+
   const resolvedTheme = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme
   const hasApi = getApi() !== null
   const installedParam = installedFilter === 'all' ? null : installedFilter === 'installed'
   const assetSort = sort === 'oldest' ? 'captured-asc' : 'captured-desc'
+  const filtered = search.trim().length > 0 || accountFilter !== null || installedFilter !== 'all'
 
   useEffect(() => {
     const query = matchMedia('(prefers-color-scheme: dark)')
@@ -135,12 +158,35 @@ export function App() {
     return () => clearTimeout(timer)
   }, [toast])
 
+  const rememberScanState = useCallback(
+    (stat: LibraryStatsDto, sourceList: RegisteredSourceDto[]) => {
+      if (stat.assets > 0 || sourceList.some((item) => item.lastScanAt !== null)) {
+        setScannedOnce(true)
+      }
+    },
+    []
+  )
+
+  const refreshMeta = useCallback(async () => {
+    if (!hasApi) return
+    const [accountList, stat, sourceList, status] = await Promise.all([
+      call((api) => api.listAccounts()),
+      call((api) => api.getLibraryStats()),
+      call((api) => api.listSources()),
+      call((api) => api.getScanStatus())
+    ])
+    setAccounts(accountList)
+    setStats(stat)
+    setSources(sourceList)
+    setScanStatus(status)
+    rememberScanState(stat, sourceList)
+  }, [hasApi, rememberScanState])
+
   /** 首屏：账号、统计、来源、扫描状态、本机设置。 */
   useEffect(() => {
     void (async () => {
       if (!hasApi) {
         setLoading(false)
-        setLoadError('需要桌面环境：当前没有可用的桌面接口。')
         return
       }
       try {
@@ -156,11 +202,12 @@ export function App() {
         setSources(sourceList)
         setScanStatus(status)
         setSettings(currentSettings)
+        rememberScanState(stat, sourceList)
       } catch (error) {
         setLoadError(errorMessage(error))
       }
     })()
-  }, [hasApi])
+  }, [hasApi, rememberScanState])
 
   /** 扫描进度事件订阅（主进程推送，界面不轮询）。 */
   useEffect(() => {
@@ -189,13 +236,20 @@ export function App() {
 
   const refreshLibrary = useCallback(async () => {
     if (!hasApi) return
+    const token = requestToken.current + 1
+    requestToken.current = token
+
     setLoading(true)
     setLoadError(null)
+    setLoadMoreError(null)
+    setLoadingMore(false)
+
     try {
       if (page === 'library' && !gameId) {
         const rows = await call((api) =>
           api.listGames({ query: search, installed: installedParam, accountKey: accountFilter })
         )
+        if (token !== requestToken.current) return
         setGames(rows)
         setAssets([])
         setNextCursor(null)
@@ -210,13 +264,18 @@ export function App() {
             limit: PAGE_SIZE
           })
         )
+        if (token !== requestToken.current) return
+        // 新查询用返回结果整体替换，不做追加
         setAssets([...result.items])
         setNextCursor(result.nextCursor)
       }
     } catch (error) {
+      if (token !== requestToken.current) return
       setLoadError(errorMessage(error))
     } finally {
-      setLoading(false)
+      if (token === requestToken.current) {
+        setLoading(false)
+      }
     }
   }, [hasApi, page, gameId, search, installedParam, accountFilter, assetSort])
 
@@ -227,8 +286,22 @@ export function App() {
     return () => clearTimeout(timer)
   }, [refreshLibrary])
 
+  /**
+   * 追加下一页。
+   *
+   * 三处保护（对应验收问题 1）：
+   *  1) loadingMore 阻止并发重复请求，按钮同时禁用；
+   *  2) 请求序号丢弃已过期的分页响应（用户期间改了筛选/搜索）；
+   *  3) 追加时按 assetId 去重，即使同一页被返回两次也不会重复。
+   */
   const loadMore = useCallback(async () => {
-    if (!nextCursor || !hasApi) return
+    if (!nextCursor || !hasApi || loadingMore) return
+
+    const token = requestToken.current
+    const cursor = nextCursor
+    setLoadingMore(true)
+    setLoadMoreError(null)
+
     try {
       const result = await call((api) =>
         api.listAssets({
@@ -237,30 +310,31 @@ export function App() {
           installed: installedParam,
           accountKey: accountFilter,
           sort: assetSort,
-          cursor: nextCursor,
+          cursor,
           limit: PAGE_SIZE
         })
       )
-      setAssets((current) => [...current, ...result.items])
+      if (token !== requestToken.current) return
+      setAssets((current) => mergeAssetPages(current, result.items))
       setNextCursor(result.nextCursor)
     } catch (error) {
-      setLoadError(errorMessage(error))
+      if (token !== requestToken.current) return
+      setLoadMoreError(errorMessage(error))
+    } finally {
+      if (token === requestToken.current) {
+        setLoadingMore(false)
+      }
     }
-  }, [nextCursor, hasApi, gameId, search, installedParam, accountFilter, assetSort])
-
-  const refreshMeta = useCallback(async () => {
-    if (!hasApi) return
-    const [accountList, stat, sourceList, status] = await Promise.all([
-      call((api) => api.listAccounts()),
-      call((api) => api.getLibraryStats()),
-      call((api) => api.listSources()),
-      call((api) => api.getScanStatus())
-    ])
-    setAccounts(accountList)
-    setStats(stat)
-    setSources(sourceList)
-    setScanStatus(status)
-  }, [hasApi])
+  }, [
+    nextCursor,
+    hasApi,
+    loadingMore,
+    gameId,
+    search,
+    installedParam,
+    accountFilter,
+    assetSort
+  ])
 
   const navigate = (next: Page) => {
     setPage(next)
@@ -269,6 +343,20 @@ export function App() {
     setSort('recent')
     setDiagnostics(false)
   }
+
+  const markImageFailed = useCallback((key: string) => {
+    setFailedImages((current) => withFailedImage(current, key))
+  }, [])
+
+  const retryImage = useCallback((key: string) => {
+    setFailedImages((current) => withoutFailedImage(current, key))
+    setImageAttempts((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
+  }, [])
+
+  const imageSrc = useCallback(
+    (key: string, base: string) => withRetryToken(base, imageAttempts[key] ?? 0),
+    [imageAttempts]
+  )
 
   const visibleGames = useMemo<GameCard[]>(() => {
     const cards = games.map(toGameCard)
@@ -384,21 +472,90 @@ export function App() {
       : `${scanStatus.processed} / ${scanStatus.total}`
     : ''
 
-  const emptyState = (
-    <div className="empty-state">
-      <MagnifyingGlassIcon size={42} weight="light" />
-      <h2>{loadError ? '无法读取图库' : hasApi ? '这里还没有截图' : '需要桌面环境'}</h2>
-      <p>
-        {loadError ??
-          (hasApi
-            ? '先登记 Steam 数据来源并执行一次扫描，索引完成后这里会显示真实截图。'
-            : '浏览器预览没有桌面接口，图库与扫描不可用。')}
-      </p>
-      {hasApi && !loadError ? (
-        <button onClick={() => void openSources()}>打开数据来源</button>
-      ) : null}
+  const itemCount = page === 'library' && !gameId ? visibleGames.length : viewerItems.length
+  const viewState = resolveLibraryViewState({
+    hasApi,
+    loading,
+    error: loadError,
+    itemCount,
+    hasAnyIndex: scannedOnce,
+    filtered
+  })
+
+  /** 错误时若已有旧结果，仍然渲染列表，与横幅里"保留上一次结果"的说明保持一致。 */
+  const listVisible = viewState === 'ready' || (viewState === 'error' && itemCount > 0)
+
+  const clearFilters = () => {
+    setSearch('')
+    setAccountFilter(null)
+    setInstalledFilter('all')
+  }
+
+  /** 查询失败时的错误区：独立于列表，明确说明旧结果是否保留，并提供重试。 */
+  const errorBanner = loadError ? (
+    <div className="error-banner" role="alert">
+      <WarningCircleIcon size={22} />
+      <div>
+        <strong>查询失败</strong>
+        <p>{loadError}</p>
+        <p className="muted small">
+          {itemCount > 0
+            ? '下方仍显示上一次成功加载的结果，可能与你当前的筛选条件不一致。'
+            : '当前没有可显示的结果。'}
+        </p>
+      </div>
+      <button onClick={() => void refreshLibrary()}>
+        <ArrowClockwiseIcon size={16} />
+        重试
+      </button>
     </div>
-  )
+  ) : null
+
+  const emptyBlock =
+    viewState === 'no-api' ? (
+      <div className="empty-state">
+        <DesktopIcon size={42} weight="light" />
+        <h2>需要桌面环境</h2>
+        <p>浏览器预览没有桌面接口，图库与扫描不可用。</p>
+      </div>
+    ) : viewState === 'loading' ? (
+      <div className="empty-state">
+        <ArrowsClockwiseIcon size={42} weight="light" />
+        <h2>正在读取索引</h2>
+        <p>从本机数据库加载游戏与截图。</p>
+      </div>
+    ) : viewState === 'error' ? (
+      <div className="empty-state">
+        <WarningCircleIcon size={42} weight="light" />
+        <h2>查询失败</h2>
+        <p>{loadError ?? '无法读取图库数据。'}</p>
+        <button onClick={() => void refreshLibrary()}>
+          <ArrowClockwiseIcon size={16} />
+          重试
+        </button>
+      </div>
+    ) : viewState === 'empty-filtered' ? (
+      <div className="empty-state">
+        <MagnifyingGlassIcon size={42} weight="light" />
+        <h2>当前筛选没有匹配结果</h2>
+        <p>索引里已有数据，但这个条件下没有匹配项。</p>
+        <button onClick={clearFilters}>清除筛选</button>
+      </div>
+    ) : viewState === 'empty-scanned' ? (
+      <div className="empty-state">
+        <HardDrivesIcon size={42} weight="light" />
+        <h2>索引里目前没有截图</h2>
+        <p>来源已扫描过，但索引中没有资产。可以重新扫描，或检查来源目录是否仍然可用。</p>
+        {hasApi ? <button onClick={() => void openSources()}>打开数据来源</button> : null}
+      </div>
+    ) : (
+      <div className="empty-state">
+        <HardDrivesIcon size={42} weight="light" />
+        <h2>还没有建立索引</h2>
+        <p>先登记 Steam 数据来源并执行一次扫描，索引完成后这里会显示真实截图。</p>
+        {hasApi ? <button onClick={() => void openSources()}>打开数据来源</button> : null}
+      </div>
+    )
 
   return (
     <div className="app-shell">
@@ -615,16 +772,15 @@ export function App() {
               </label>
             </div>
 
-            {loading ? (
-              <div className="empty-state">
-                <ArrowsClockwiseIcon size={42} weight="light" />
-                <h2>正在读取索引</h2>
-                <p>从本机数据库加载游戏与截图。</p>
-              </div>
-            ) : page === 'library' && !gameId ? (
-              visibleGames.length ? (
-                <div className="game-grid">
-                  {visibleGames.map((game) => (
+            {errorBanner}
+
+            {listVisible && page === 'library' && !gameId ? (
+              <div className="game-grid">
+                {visibleGames.map((game) => {
+                  const coverKey = `${game.key}:cover`
+                  const coverFailed = failedImages.has(coverKey)
+                  const coverUnavailable = !game.coverUrl || coverFailed
+                  return (
                     <button
                       className="game-card"
                       key={game.key}
@@ -635,13 +791,28 @@ export function App() {
                       }}
                     >
                       <div className="card-image">
-                        {game.coverUrl ? (
-                          <img src={game.coverUrl} alt={`${game.name} 最近一张截图`} />
-                        ) : (
-                          <div className="empty-state">
-                            <ImagesIcon size={28} weight="light" />
-                            <p>暂无可用截图</p>
+                        {coverUnavailable ? (
+                          <div className="card-missing">
+                            <ImagesIcon size={20} weight="light" />
+                            <span>{coverFailed ? '封面加载失败' : '暂无可用截图'}</span>
+                            {coverFailed && game.coverUrl ? (
+                              <button
+                                className="text-button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  retryImage(coverKey)
+                                }}
+                              >
+                                重试
+                              </button>
+                            ) : null}
                           </div>
+                        ) : (
+                          <img
+                            src={imageSrc(coverKey, game.coverUrl!)}
+                            alt={`${game.name} 最近一张截图`}
+                            onError={() => markImageFailed(coverKey)}
+                          />
                         )}
                         <span className="image-count">
                           <ImagesIcon size={14} />
@@ -660,49 +831,85 @@ export function App() {
                         </div>
                       </div>
                     </button>
-                  ))}
-                </div>
-              ) : (
-                emptyState
-              )
-            ) : viewerItems.length ? (
+                  )
+                })}
+              </div>
+            ) : listVisible ? (
               <>
                 <div className="shot-grid">
-                  {viewerItems.map((shot, index) => (
-                    <button
-                      className="shot-card"
-                      key={shot.id}
-                      onClick={() => setViewer({ items: viewerItems, index })}
-                    >
-                      <div className="card-image">
-                        {shot.available ? (
-                          <img src={shot.thumbSrc} alt={shot.title} />
-                        ) : (
-                          <div className="empty-state">
-                            <WarningCircleIcon size={26} weight="light" />
-                            <p>原图缺失</p>
-                          </div>
-                        )}
-                        <span className="card-open">
-                          <ImagesIcon size={20} />
-                        </span>
-                      </div>
-                      <div className="shot-caption">
-                        <strong>{shot.title}</strong>
-                        <span>{gameId ? shot.date : shot.gameName}</span>
-                      </div>
-                    </button>
-                  ))}
+                  {viewerItems.map((shot, index) => {
+                    const failed = failedImages.has(shot.id)
+                    const unavailable = isAssetUnavailable(shot.available, failed)
+                    return (
+                      <button
+                        className="shot-card"
+                        key={shot.id}
+                        onClick={() => setViewer({ items: viewerItems, index })}
+                      >
+                        <div className="card-image">
+                          {unavailable ? (
+                            <div className="card-missing">
+                              <WarningCircleIcon size={20} weight="light" />
+                              <span>原图不可用</span>
+                              {failed ? (
+                                <button
+                                  className="text-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    retryImage(shot.id)
+                                  }}
+                                >
+                                  重试
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <img
+                              src={imageSrc(shot.id, shot.src)}
+                              alt={shot.title}
+                              loading="lazy"
+                              onError={() => markImageFailed(shot.id)}
+                            />
+                          )}
+                          <span className="card-open">
+                            <ImagesIcon size={20} />
+                          </span>
+                        </div>
+                        <div className="shot-caption">
+                          <strong>{shot.title}</strong>
+                          <span>
+                            {unavailable ? '原图不可用' : gameId ? shot.date : shot.gameName}
+                          </span>
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
+                {loadMoreError ? (
+                  <div className="error-banner inline" role="alert">
+                    <WarningCircleIcon size={20} />
+                    <div>
+                      <strong>加载更多失败</strong>
+                      <p>{loadMoreError}</p>
+                      <p className="muted small">已加载的 {viewerItems.length} 张仍然有效。</p>
+                    </div>
+                    <button disabled={loadingMore} onClick={() => void loadMore()}>
+                      <ArrowClockwiseIcon size={16} />
+                      重试
+                    </button>
+                  </div>
+                ) : null}
                 {nextCursor ? (
                   <div className="result-toolbar">
                     <span className="muted">已加载 {viewerItems.length} 张，还有更多</span>
-                    <button onClick={() => void loadMore()}>加载更多</button>
+                    <button disabled={loadingMore} onClick={() => void loadMore()}>
+                      {loadingMore ? '加载中…' : '加载更多'}
+                    </button>
                   </div>
                 ) : null}
               </>
             ) : (
-              emptyState
+              emptyBlock
             )}
           </>
         )}

@@ -15,6 +15,9 @@ const TYPE_OBJECT_START = 0x00
 const TYPE_STRING = 0x01
 const TYPE_INT32 = 0x02
 const TYPE_UINT64 = 0x07
+const TYPE_FLOAT32 = 0x03
+const TYPE_WIDESTRING = 0x05
+const TYPE_COLOR = 0x06
 const TYPE_OBJECT_END = 0x08
 
 export type BinaryVdfValue = string | number | BinaryVdfObject
@@ -93,6 +96,31 @@ class BinaryVdfReader {
         case TYPE_UINT64:
           result[key] = this.readUInt64()
           break
+        case TYPE_FLOAT32: {
+          this.ensure(4)
+          result[key] = this.buffer.readFloatLE(this.offset)
+          this.offset += 4
+          break
+        }
+        case TYPE_WIDESTRING: {
+          // UTF-16LE，以两个 0 字节结束
+          let end = this.offset
+          while (
+            end + 1 < this.buffer.length &&
+            !(this.buffer[end] === 0 && this.buffer[end + 1] === 0)
+          ) {
+            end += 2
+          }
+          result[key] = this.buffer.toString('utf16le', this.offset, end)
+          this.offset = end + 2
+          break
+        }
+        case TYPE_COLOR: {
+          this.ensure(4)
+          this.offset += 4
+          result[key] = 0
+          break
+        }
         default:
           throw new AppError('SRC_VDF_PARSE', `不支持的二进制 VDF 类型字节 0x${type.toString(16)}`)
       }

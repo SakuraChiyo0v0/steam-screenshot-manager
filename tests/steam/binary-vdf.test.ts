@@ -65,10 +65,10 @@ describe('二进制 VDF 读取器', () => {
   })
 
   it('遇到不支持的类型字节时抛错', () => {
-    // 0x05 是宽字符串，shortcuts.vdf 中不会出现
+    // 0x0A 是未支持的类型字节（宽字符串 0x05 已支持，用于 appinfo）
     const buffer = Buffer.concat([
       objStart('shortcuts'),
-      Buffer.from([0x05]),
+      Buffer.from([0x0a]),
       Buffer.from('x', 'utf8'),
       Buffer.from([0x00])
     ])

@@ -1248,3 +1248,104 @@ dialog::backdrop {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── 验收修复：查询错误区、卡片级缺图占位、大图不可用状态 ── */
+
+.error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.error-banner.inline {
+  margin-top: 16px;
+}
+
+.error-banner > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.error-banner strong {
+  display: block;
+  font-size: 14px;
+}
+
+.error-banner p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.error-banner > button {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.error-banner > button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 卡片图像区是较矮的 16:9 且 overflow: hidden，
+   不能复用大尺寸的 .empty-state，否则图标与文案会被裁切。 */
+.card-missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.card-missing .text-button {
+  font-size: 12px;
+}
+
+.image-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--stage);
+}
+
+.image-unavailable h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.image-unavailable p {
+  margin: 0;
+  max-width: 460px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.image-unavailable button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
