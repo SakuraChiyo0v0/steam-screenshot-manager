@@ -19,7 +19,7 @@ import type {
 import { archiveAssets, localCopyState, reconcileLibrary } from '@core/library/archive'
 import { planPreviews } from '@core/library/previews'
 import type { SqliteDatabase } from '@core/db/sqlite'
-import { requestPreview } from './preview-queue'
+import { requestPreviewWarmup } from './preview-queue'
 import { exportAssets } from '@core/library/export'
 import { checkLibraryRoot } from '@core/settings/library-root'
 import { readSettings } from '@core/settings/settings-store'
@@ -105,15 +105,15 @@ export function requireLibraryRoot(): string {
 function warmUpPreviews(db: SqliteDatabase, libraryRoot: string): void {
   try {
     const pending = planPreviews(db, libraryRoot)
-    for (const candidate of pending.slice(0, 2_000)) {
-      requestPreview({
+    requestPreviewWarmup(
+      pending.slice(0, 2_000).map((candidate) => ({
         assetId: candidate.assetId,
         libraryRoot,
         sha256: candidate.sha256,
         sourceRoot: candidate.sourceRoot,
         relativePath: candidate.relativePath
-      })
-    }
+      }))
+    )
   } catch {
     // 预热失败不影响归档结果
   }

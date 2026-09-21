@@ -14,7 +14,7 @@ import { findAssetLocation } from '@core/library/queries'
 import { previewAbsolutePath, type PreviewSize } from '@core/library/previews'
 import { readSettings } from '@core/settings/settings-store'
 import { getAppContext } from './app-context'
-import { requestPreview } from './preview-queue'
+import { notePreviewRequest, requestPreview } from './preview-queue'
 
 export const ASSET_SCHEME = 'ssm-asset'
 const ASSET_HOST = 'asset'
@@ -97,6 +97,8 @@ export function registerAssetProtocol(): void {
         // 来源缩略图只有约 200px，在卡片尺寸下会发虚，但**先给用户看得见的东西**：
         // 预览生成完成后会通过 preview:ready 事件自动换成清晰的预览。
         // （若这里直接返回 4K 原图，一屏 200 张会触发解码风暴，反而把协议响应拖住。）
+        // 记录"用户正在浏览"，队列据此决定让出多少时间
+        notePreviewRequest()
         if (location.hasThumbnail) {
           try {
             const thumbnailPath = await resolveExistingAssetPath(
