@@ -269,6 +269,7 @@ export function registerIpcHandlers(): void {
     )
     const queue = previewQueueStats()
     return { count: stats.count, bytes: stats.bytes, pending: queue.pending, generated: queue.generated }
+  })
 
   /** 名称补全用到的密钥文件名（存在用户数据目录的加密目录下）。 */
 
@@ -330,7 +331,6 @@ export function registerIpcHandlers(): void {
     }
     setGameAlias(database.db, input.gameKey, input.name, new Date().toISOString())
     return listGames(database.db, {}).map(toGalleryGame)
-  })
   })
 
   handle(IPC_CHANNELS.libraryPickRoot, async (): Promise<LibraryRootState> => {
