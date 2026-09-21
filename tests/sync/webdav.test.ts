@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AppError } from '@shared/errors'
-import { classifyDavFailure, joinRemotePath, parseRetryAfterMs } from '@core/sync/webdav'
+import { basicAuthHeader, classifyDavFailure, joinRemotePath, parseRetryAfterMs } from '@core/sync/webdav'
 
 describe('远端路径拼接', () => {
   it('把根路径与相对路径拼成编码后的绝对路径', () => {
@@ -51,6 +51,12 @@ describe('故障分类', () => {
     expect(classifyDavFailure(500, context).code).toBe('DAV_TIMEOUT')
   })
 
+  it('409 归为路径错误（父目录不存在），不可重试', () => {
+    const failure = classifyDavFailure(409, context)
+    expect(failure.code).toBe('LIB_PATH_INVALID')
+    expect(failure.message).toContain('父目录不存在')
+  })
+
   it('网页内容识别为非 WebDAV，即使是 200', () => {
     expect(
       classifyDavFailure(200, {
@@ -59,5 +65,18 @@ describe('故障分类', () => {
         retryAfterMs: null
       }).code
     ).toBe('DAV_NOT_WEBDAV')
+  })
+})
+
+describe('凭据代持', () => {
+  it('用户名与密码都为空时不生成 Authorization（交给前置网关注入）', () => {
+    expect(basicAuthHeader({ username: '', password: '' })).toBeNull()
+  })
+
+  it('只要有一侧非空就生成 Basic 头', () => {
+    const expected = `Basic ${Buffer.from('user:pass', 'utf8').toString('base64')}`
+    expect(basicAuthHeader({ username: 'user', password: 'pass' })).toBe(expected)
+    expect(basicAuthHeader({ username: 'user', password: '' })).not.toBeNull()
+    expect(basicAuthHeader({ username: '', password: 'pass' })).not.toBeNull()
   })
 })

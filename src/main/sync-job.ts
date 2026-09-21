@@ -28,7 +28,7 @@ import {
   libraryRootPath,
   validateLibraryDescriptor
 } from '@core/sync/library-remote'
-import { DavClient, probeCapabilities, type CapabilityItem } from '@core/sync/webdav'
+import { DavClient, probeCapabilities, splitDavUrl, type CapabilityItem } from '@core/sync/webdav'
 import { planUpload, remoteStatusCounts, uploadAssets } from '@core/sync/upload'
 import { getAppContext } from './app-context'
 
@@ -165,11 +165,15 @@ export async function connectRemote(input: {
     throw new AppError('APP_INTERNAL', '当前系统无法安全加密保存密码，已拒绝连接')
   }
 
+  const { baseUrl: davBaseUrl, rootPath: davRootPath } = splitDavUrl(input.baseUrl)
   const client = new DavClient({
-    baseUrl: input.baseUrl,
-    rootPath: '',
+    baseUrl: davBaseUrl,
+    rootPath: davRootPath,
     credential: { username: input.username, password: input.password }
   })
+
+  // 先确保基础路径存在，再探测能力（有些远端不会自动创建 URL 里的目录）
+  await client.ensureBaseCollection()
 
   // 明确测试认证是否可用：探测里的第一项失败会很快暴露问题
   const probe: CapabilityItem[] = await probeCapabilities(client, '')

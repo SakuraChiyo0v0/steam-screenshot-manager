@@ -26,7 +26,7 @@ import {
   validateLibraryDescriptor
 } from '@core/sync/library-remote'
 import { isCredentialStorageAvailable, saveCredential } from '@core/sync/credentials'
-import { DavClient, probeCapabilities } from '@core/sync/webdav'
+import { DavClient, probeCapabilities, splitDavUrl } from '@core/sync/webdav'
 import { planUpload, remoteStatusCounts, uploadAssets } from '@core/sync/upload'
 import { disposeAppContext, initAppContext } from './app-context'
 import { resolveProtectedRoots } from './paths'
@@ -76,9 +76,10 @@ export async function runVerifyUpload(baseUrl: string, argv: readonly string[]):
       throw new AppError('LIB_PATH_INVALID', rootCheck.reason)
     }
 
+    const { baseUrl: davBaseUrl, rootPath: davRootPath } = splitDavUrl(baseUrl)
     const client = new DavClient({
-      baseUrl,
-      rootPath: '',
+      baseUrl: davBaseUrl,
+      rootPath: davRootPath,
       credential: { username, password }
     })
 
@@ -88,6 +89,9 @@ export async function runVerifyUpload(baseUrl: string, argv: readonly string[]):
       libraryRoot,
       startedAt: new Date().toISOString()
     }
+
+    // 0) 确保基础路径存在（有些远端不会自动创建 URL 里的目录）
+    await client.ensureBaseCollection()
 
     // 1) 兼容探测（新随机子目录）
     const probe = await probeCapabilities(client, '')

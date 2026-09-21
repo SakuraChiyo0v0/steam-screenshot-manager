@@ -23,7 +23,7 @@ import { writeSettings } from '@core/settings/settings-store'
 import { saveCredential } from '@core/sync/credentials'
 import { validateLibraryDescriptor, libraryDescriptorPath } from '@core/sync/library-remote'
 import { listRemoteRecords, planRestoreGames, restoreAssets } from '@core/sync/restore'
-import { DavClient } from '@core/sync/webdav'
+import { DavClient, splitDavUrl } from '@core/sync/webdav'
 import { disposeAppContext, initAppContext } from './app-context'
 import { resolveProtectedRoots } from './paths'
 
@@ -70,9 +70,10 @@ export async function runVerifyRestore(baseUrl: string, argv: readonly string[])
     mkdirSync(libraryRoot, { recursive: true })
     writeSettings(db, { libraryRoot })
 
+    const { baseUrl: davBaseUrl, rootPath: davRootPath } = splitDavUrl(baseUrl)
     const client = new DavClient({
-      baseUrl,
-      rootPath: '',
+      baseUrl: davBaseUrl,
+      rootPath: davRootPath,
       credential: { username, password }
     })
 

@@ -386,6 +386,8 @@ async function runCandidateSteps(
   }
 
   if (!objectReady) {
+    // 真实 WebDAV 不会自动创建父目录，必须先逐级建好
+    await options.client.ensureParentCollection(candidate.objectKey)
     await options.client.putFile(candidate.objectKey, candidate.localFilePath)
     didUpload = true
     const verified = await readBackAndHash(options.client, candidate.objectKey)
@@ -454,6 +456,7 @@ async function runCandidateSteps(
       importedAt: now(),
       objectKey: candidate.objectKey
     })
+    await options.client.ensureParentCollection(recordPath)
     await options.client.putText(recordPath, `${JSON.stringify(record, null, 2)}\n`)
 
     const readBack = await options.client.getText(recordPath)

@@ -15,6 +15,24 @@ import { request as httpRequest, type IncomingMessage } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { AppError } from '@shared/errors'
 
+/**
+ * 把用户填写的 WebDAV 地址拆成「源」与「根路径」。
+ *
+ * 例如 `https://host/volume1/@tmp/backup` → baseUrl `https://host`、rootPath `volume1/@tmp/backup`。
+ * 这样根路径能走留空路径时的逐级创建逻辑（有些远端不会自动创建 URL 里的目录）。
+ */
+export function splitDavUrl(rawUrl: string): { baseUrl: string; rootPath: string } {
+  const parsed = new URL(rawUrl)
+  const segments = parsed.pathname
+    .split('/')
+    .filter((segment) => segment.length > 0)
+    .map((segment) => decodeURIComponent(segment))
+  return {
+    baseUrl: parsed.origin,
+    rootPath: segments.join('/')
+  }
+}
+
 export interface DavCredential {
   readonly username: string
   readonly password: string
@@ -42,7 +60,17 @@ export interface DownloadResult {
 const DEFAULT_TIMEOUT_MS = 20_000
 const MAX_REDIRECTS = 3
 
-function basicAuthHeader(credential: DavCredential): string {
+/**
+ * 生成 Basic 认证头。
+ *
+ * 用户名与密码都为空时返回 null：这样请求里就不会带 Authorization，
+ * 便于把凭据交给前置网关代持（例如本机端口镜像/统一登录网关会自行注入该头；
+ * 若调用方自己带了这个头，它会覆盖网关注入的值并导致 401）。
+ */
+export function basicAuthHeader(credential: DavCredential): string | null {
+  if (credential.username.length === 0 && credential.password.length === 0) {
+    return null
+  }
   return `Basic ${Buffer.from(`${credential.username}:${credential.password}`, 'utf8').toString('base64')}`
 }
 
@@ -112,6 +140,10 @@ export function classifyDavFailure(
     const wait = context.retryAfterMs ? `，建议等待 ${Math.round(context.retryAfterMs / 1000)} 秒` : ''
     return new AppError('DAV_RATE_LIMIT', `远端返回 429${wait}`, { retryAfterMs: context.retryAfterMs ?? undefined })
   }
+  if (status === 409) {
+    // 父目录不存在：不是认证问题，也不该当成可重试的服务端错误
+    return new AppError('LIB_PATH_INVALID', '远端父目录不存在（HTTP 409）')
+  }
   if (status === 507) {
     return new AppError('DAV_CAPACITY', '远端返回 507')
   }
@@ -128,6 +160,8 @@ export function classifyDavFailure(
 
 interface RawRequestOptions {
   readonly method: string
+  /** true 表示 relativePath 相对 baseUrl 起算（不再拼 rootPath），用于创建基础路径本身 */
+  readonly fromBase?: boolean
   readonly relativePath: string
   readonly headers?: Record<string, string>
   readonly bodyText?: string
@@ -136,6 +170,8 @@ interface RawRequestOptions {
   readonly expectDav?: boolean
   readonly collectBody?: boolean
   readonly downloadTo?: string
+  /** 这些状态码直接返回给调用方处理，不当作错误抛出（例如 MKCOL 已存在时的 405/301） */
+  readonly tolerateStatuses?: readonly number[]
 }
 
 interface RawResponse {
@@ -163,7 +199,7 @@ export class DavClient {
   }
 
   private async raw(options: RawRequestOptions): Promise<RawResponse> {
-    const path = joinRemotePath(this.config.rootPath, options.relativePath)
+    const path = joinRemotePath(options.fromBase ? '' : this.config.rootPath, options.relativePath)
     let attempt = 0
     let currentPath = path
     let currentUrl = new URL(this.base.toString())
@@ -200,7 +236,7 @@ export class DavClient {
       }
 
       if (response.status >= 400) {
-        if (response.status === 404) {
+        if (response.status === 404 || options.tolerateStatuses?.includes(response.status)) {
           return response
         }
         throw classifyDavFailure(response.status, {
@@ -222,9 +258,10 @@ export class DavClient {
   private sendOnce(url: URL, options: RawRequestOptions): Promise<RawResponse> {
     return new Promise<RawResponse>((resolve, reject) => {
       const isHttps = url.protocol === 'https:'
-      const headers: Record<string, string> = {
-        authorization: basicAuthHeader(this.config.credential),
-        ...(options.headers ?? {})
+      const headers: Record<string, string> = { ...(options.headers ?? {}) }
+      const authorization = basicAuthHeader(this.config.credential)
+      if (authorization) {
+        headers['authorization'] = authorization
       }
 
       if (options.bodyFile) {
@@ -314,7 +351,13 @@ export class DavClient {
 
   /** MKCOL：已存在（405/301）视为成功。 */
   async createCollection(relativePath: string): Promise<void> {
-    const response = await this.raw({ method: 'MKCOL', relativePath, expectDav: true })
+    // 已存在时不同服务端返回 405 或 301，都按"已存在"处理
+    const response = await this.raw({
+      method: 'MKCOL',
+      relativePath,
+      expectDav: true,
+      tolerateStatuses: [405, 301]
+    })
     if (response.status === 405 || response.status === 301) {
       return
     }
@@ -323,14 +366,61 @@ export class DavClient {
     }
   }
 
-  /** 逐级创建目录，已存在的层级直接跳过。 */
+  /**
+   * 确保基础路径（baseUrl 里的路径）存在。
+   *
+   * 有些远端不会自动创建 URL 里的目录，直接 MKCOL 子目录会返回 409（父目录不存在），
+   * 因此连接时先把基础路径逐级建出来。
+   */
+  async ensureBaseCollection(): Promise<void> {
+    const segments = this.config.rootPath
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0)
+    if (segments.length === 0) {
+      return
+    }
+    let current = ''
+    for (const segment of segments) {
+      current = current.length === 0 ? segment : `${current}/${segment}`
+      // 注意：这里要相对 baseUrl 起算，否则会拼成 <基础路径>/<基础路径第一段>
+      const response = await this.raw({
+        method: 'MKCOL',
+        relativePath: current,
+        fromBase: true,
+        expectDav: true,
+        tolerateStatuses: [405, 301]
+      })
+      if (response.status !== 201 && response.status !== 200 && response.status !== 405 && response.status !== 301) {
+        throw new AppError('LIB_PATH_INVALID', `创建远端目录返回 ${response.status}`)
+      }
+    }
+  }
+
+  /** 本次运行已经确认存在的集合，避免每个文件都重复逐级 MKCOL。 */
+  private readonly ensuredCollections = new Set<string>()
+
+  /** 逐级创建目录；已建过的层级不再重复请求。 */
   async ensureCollection(relativePath: string): Promise<void> {
     const segments = relativePath.split('/').filter((segment) => segment.length > 0)
     let current = ''
     for (const segment of segments) {
       current = current.length === 0 ? segment : `${current}/${segment}`
+      if (this.ensuredCollections.has(current)) {
+        continue
+      }
       await this.createCollection(current)
+      this.ensuredCollections.add(current)
     }
+  }
+
+  /** 确保某个文件路径的父集合存在（真实 WebDAV 不会自动创建父目录）。 */
+  async ensureParentCollection(relativePath: string): Promise<void> {
+    const index = relativePath.lastIndexOf('/')
+    if (index <= 0) {
+      return
+    }
+    await this.ensureCollection(relativePath.slice(0, index))
   }
 
   async list(relativePath: string): Promise<{ status: number; hrefs: string[] }> {
