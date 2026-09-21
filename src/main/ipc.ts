@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { app, dialog, ipcMain } from 'electron'
+import { app, dialog, ipcMain, net } from 'electron'
 import { AppError, ok, toErr } from '@shared/errors'
 import { IPC_CHANNELS } from '@shared/ipc'
 import type {
@@ -19,6 +19,8 @@ import type {
   ExportSummaryDto,
   LibraryCopyStateDto,
   PreviewStatsDto,
+  SteamKeyStatusDto,
+  CompleteNamesResultDto,
   RemoteCatalogDto,
   RemoteConnectionDto,
   RemoteStateDto,
@@ -57,10 +59,24 @@ import {
 } from '@core/library/queries'
 import type { AssetSummary } from '@core/library/queries'
 import { assetUrl, miniUrl, thumbnailUrl } from './asset-protocol'
+import type { SqliteDatabase } from '@core/db/sqlite'
 import { getAppContext } from './app-context'
 import { applyLoginItem } from './index'
 import { rescheduleAutoCollect } from './auto-collect'
 import { previewStats, resolvePreviewCacheRoot } from '@core/library/previews'
+import {
+  deleteEncrypted,
+  isEncryptionAvailable,
+  loadEncrypted,
+  saveEncrypted
+} from '@core/settings/encrypted-store'
+import {
+  appNameCacheStats,
+  completeGameNamesFromCache,
+  fetchAppNames,
+  saveAppNames,
+  setGameAlias
+} from '@core/steam/app-names'
 import { previewQueueStats } from './preview-queue'
 import {
   parseArchiveStart,
@@ -109,6 +125,19 @@ function handle(channel: string, handler: (payload: unknown) => unknown): void {
       return toErr(error)
     }
   })
+}
+
+/** Steam Web API Key 的加密存储名。 */
+const STEAM_API_KEY_NAME = 'steam-api-key'
+
+/** 密钥状态：只回报"配没配"和缓存条数，密钥本身不回渲染层。 */
+function steamKeyStatus(db: SqliteDatabase, dataDir: string): SteamKeyStatusDto {
+  const apiKey = loadEncrypted(dataDir, STEAM_API_KEY_NAME)
+  return {
+    configured: Boolean(apiKey && apiKey.length > 0),
+    storageAvailable: isEncryptionAvailable(),
+    cachedNames: appNameCacheStats(db).count
+  }
 }
 
 function toRegisteredSource(row: SourceRow): RegisteredSourceDto {
@@ -240,6 +269,68 @@ export function registerIpcHandlers(): void {
     )
     const queue = previewQueueStats()
     return { count: stats.count, bytes: stats.bytes, pending: queue.pending, generated: queue.generated }
+
+  /** 名称补全用到的密钥文件名（存在用户数据目录的加密目录下）。 */
+
+  handle(IPC_CHANNELS.steamKeyStatus, (): SteamKeyStatusDto => {
+    const { database, paths } = getAppContext()
+    return steamKeyStatus(database.db, paths.dataDir)
+  })
+
+  handle(IPC_CHANNELS.steamSaveKey, (payload): SteamKeyStatusDto => {
+    const { database, paths } = getAppContext()
+    const apiKey = typeof payload === 'string' ? payload.trim() : ''
+    if (apiKey.length === 0) {
+      deleteEncrypted(paths.dataDir, STEAM_API_KEY_NAME)
+    } else {
+      saveEncrypted(paths.dataDir, STEAM_API_KEY_NAME, apiKey)
+    }
+    return steamKeyStatus(database.db, paths.dataDir)
+  })
+
+  handle(IPC_CHANNELS.steamCompleteNames, async (): Promise<CompleteNamesResultDto> => {
+    const { database, paths } = getAppContext()
+    const apiKey = loadEncrypted(paths.dataDir, STEAM_API_KEY_NAME)
+    if (!apiKey) {
+      return { fetched: 0, written: 0, updated: 0, pages: 0, exhausted: false, error: '还没有配置 Steam Web API Key' }
+    }
+    const now = new Date().toISOString()
+    try {
+      const result = await fetchAppNames({
+        apiKey,
+        fetcher: (url) => net.fetch(url)
+      })
+      const written = saveAppNames(database.db, result.entries, now)
+      const updated = completeGameNamesFromCache(database.db, now)
+      return {
+        fetched: result.entries.length,
+        written,
+        updated,
+        pages: result.pages,
+        exhausted: result.exhausted,
+        error: null
+      }
+    } catch (error) {
+      return {
+        fetched: 0,
+        written: 0,
+        updated: 0,
+        pages: 0,
+        exhausted: false,
+        error: error instanceof Error ? error.message : '补全失败'
+      }
+    }
+  })
+
+  handle(IPC_CHANNELS.libraryRenameGame, (payload): GalleryGameDto[] => {
+    const { database } = getAppContext()
+    const input = payload as { gameKey?: unknown; name?: unknown } | undefined
+    if (typeof input?.gameKey !== 'string' || typeof input?.name !== 'string') {
+      throw new AppError('IPC_INVALID_INPUT', '重命名参数不合法')
+    }
+    setGameAlias(database.db, input.gameKey, input.name, new Date().toISOString())
+    return listGames(database.db, {}).map(toGalleryGame)
+  })
   })
 
   handle(IPC_CHANNELS.libraryPickRoot, async (): Promise<LibraryRootState> => {

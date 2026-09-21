@@ -32,6 +32,7 @@ import type {
   LibraryCopyStateDto,
   LibraryStatsDto,
   PreviewStatsDto,
+  SteamKeyStatusDto,
   RemoteStateDto,
   UploadStatusDto,
   RegisteredSourceDto,
@@ -132,6 +133,12 @@ export function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
+
+  // 游戏信息补全（Steam Web API）：密钥只存本机加密文件，界面只显示"配没配"
+  const [steamKey, setSteamKey] = useState<SteamKeyStatusDto | null>(null)
+  const [steamKeyInput, setSteamKeyInput] = useState('')
+  const [steamBusy, setSteamBusy] = useState(false)
+  const [steamNote, setSteamNote] = useState<string | null>(null)
 
   const [sources, setSources] = useState<RegisteredSourceDto[]>([])
   const [discovered, setDiscovered] = useState<DiscoveredRootDto[]>([])
@@ -344,6 +351,57 @@ export function App() {
   }, [refreshPreviewState])
 
   /** 更新本机设置；部分字段需要主进程同步调整运行状态（如开机自启）。 */
+  const refreshSteamKey = useCallback(async () => {
+    if (!hasApi) return
+    try {
+      setSteamKey(await call((api) => api.getSteamKeyStatus()))
+    } catch {
+      /* 读不到不影响其它功能 */
+    }
+  }, [hasApi])
+
+  useEffect(() => {
+    void refreshSteamKey()
+  }, [refreshSteamKey])
+
+  /** 保存或清除密钥后刷新状态。 */
+  const saveSteamKey = async () => {
+    setSteamBusy(true)
+    setSteamNote(null)
+    try {
+      const next = await call((api) => api.saveSteamApiKey(steamKeyInput.trim()))
+      setSteamKey(next)
+      setSteamKeyInput('')
+      setSteamNote(next?.configured ? '已保存到本机加密存储' : '已清除密钥')
+    } catch (error) {
+      setSteamNote(errorMessage(error))
+    } finally {
+      setSteamBusy(false)
+    }
+  }
+
+  /** 联网抓商店应用目录，把缺失的游戏名补上。 */
+  const runCompleteNames = async () => {
+    setSteamBusy(true)
+    setSteamNote(null)
+    try {
+      const result = await call((api) => api.completeGameNames())
+      if (result?.error) {
+        setSteamNote(`补全失败：${result.error}`)
+      } else if (result) {
+        setSteamNote(
+          `抓取 ${result.fetched} 条名称，写入本地缓存 ${result.written} 条，补全 ${result.updated} 款游戏`
+        )
+      }
+      await refreshSteamKey()
+      void refreshLibrary()
+    } catch (error) {
+      setSteamNote(errorMessage(error))
+    } finally {
+      setSteamBusy(false)
+    }
+  }
+
   const patchSettings = async (patch: Partial<Settings>) => {
     try {
       setSettings(await call((api) => api.updateSettings(patch)))
@@ -898,6 +956,8 @@ export function App() {
                 onClick={() => {
                   setGameId(null)
                   setSearch('')
+                  // 相册可切到最早拍摄，游戏库没有这个选项；返回时重置，否则排序按钮文字会变空
+                  setSort('recent')
                 }}
               >
                 <ArrowLeftIcon size={16} />
@@ -1029,7 +1089,7 @@ export function App() {
                   aria-label="排序"
                   onClick={() => setSortMenuOpen((open) => !open)}
                 >
-                  <span>{sortOptions.find((option) => option.value === sort)?.label}</span>
+                  <span>{sortOptions.find((option) => option.value === sort)?.label ?? sortOptions[0]?.label}</span>
                   <CaretDownIcon size={13} />
                 </button>
                 {sortMenuOpen ? (
@@ -1354,6 +1414,53 @@ export function App() {
                   {stats.missingFiles > 0 ? ` · ${stats.missingFiles} 个来源文件当前缺失` : ''}
                 </p>
               ) : null}
+            </section>
+
+            <section className="settings-card">
+              <div className="section-heading">
+                <div>
+                  <h2>游戏信息补全</h2>
+                  <p>
+                    Steam 截图目录只有 AppID，未安装的游戏本地往往查不到名字。填一个可选的
+                    Steam Web API Key，就能从商店应用目录把名字补全；名称会存在本机，断网也能显示。
+                  </p>
+                </div>
+                <span className="demo-pill">{steamKey?.configured ? '已配置' : '未配置'}</span>
+              </div>
+              {steamKey && !steamKey.storageAvailable ? (
+                <p className="panel-note">当前系统无法安全加密保存密钥，因此不提供配置；不会以明文保存。</p>
+              ) : (
+                <div className="directory-field">
+                  <input
+                    type="password"
+                    placeholder={steamKey?.configured ? '已保存，填入新值可替换' : 'Steam Web API Key（可留空跳过）'}
+                    value={steamKeyInput}
+                    onChange={(event) => setSteamKeyInput(event.target.value)}
+                    aria-label="Steam Web API Key"
+                  />
+                  <button disabled={steamBusy || steamKeyInput.trim().length === 0} onClick={() => void saveSteamKey()}>
+                    保存密钥
+                  </button>
+                  <button disabled={steamBusy} onClick={() => void saveSteamKey()}>
+                    清除
+                  </button>
+                </div>
+              )}
+              <div className="section-heading">
+                <div>
+                  <p className="panel-note">
+                    本地已缓存 {steamKey?.cachedNames ?? 0} 条名称。
+                    {steamKey?.configured
+                      ? '补全后重新扫描、重启或同步到另一台电脑都不会把名字弄丢。'
+                      : '未配置密钥时，未安装游戏的名称会显示为「未知游戏（AppID）」。'}
+                  </p>
+                </div>
+                <button disabled={steamBusy || !steamKey?.configured} onClick={() => void runCompleteNames()}>
+                  <ArrowsClockwiseIcon size={16} />
+                  {steamBusy ? '补全中…' : '补全游戏信息'}
+                </button>
+              </div>
+              {steamNote ? <p className="panel-note">{steamNote}</p> : null}
             </section>
 
             <section className="settings-card">

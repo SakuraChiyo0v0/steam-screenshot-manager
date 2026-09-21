@@ -19,6 +19,9 @@ import type {
   UploadStatusDto,
   RemoteCatalogDto,
   PreviewStatsDto,
+  SteamKeyStatusDto,
+  CompleteNamesResultDto,
+  RenameGamePayload,
   RestoreStatusDto,
   RestoreSummaryDto,
   UploadSummaryDto,
@@ -82,7 +85,12 @@ export const IPC_CHANNELS = {
   syncCatalog: 'sync:catalog',
   restoreStart: 'restore:start',
   restoreCancel: 'restore:cancel',
-  restoreStatus: 'restore:status'
+  restoreStatus: 'restore:status',
+  // 游戏信息补全（Steam Web API 名称）
+  steamKeyStatus: 'steam:keyStatus',
+  steamSaveKey: 'steam:saveKey',
+  steamCompleteNames: 'steam:completeNames',
+  libraryRenameGame: 'library:renameGame'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -135,7 +143,11 @@ export const EXPOSED_METHODS = [
   'scanRemoteCatalog',
   'startRestore',
   'cancelRestore',
-  'getRestoreStatus'
+  'getRestoreStatus',
+  'getSteamKeyStatus',
+  'saveSteamApiKey',
+  'completeGameNames',
+  'renameGame'
 ] as const
 
 export type ExposedMethod = (typeof EXPOSED_METHODS)[number]
@@ -194,7 +206,11 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   scanRemoteCatalog: IPC_CHANNELS.syncCatalog,
   startRestore: IPC_CHANNELS.restoreStart,
   cancelRestore: IPC_CHANNELS.restoreCancel,
-  getRestoreStatus: IPC_CHANNELS.restoreStatus
+  getRestoreStatus: IPC_CHANNELS.restoreStatus,
+  getSteamKeyStatus: IPC_CHANNELS.steamKeyStatus,
+  saveSteamApiKey: IPC_CHANNELS.steamSaveKey,
+  completeGameNames: IPC_CHANNELS.steamCompleteNames,
+  renameGame: IPC_CHANNELS.libraryRenameGame
 }
 
 export type IpcResult<T> = Ok<T> | Err
@@ -280,6 +296,14 @@ export interface RendererApi {
   updateSettings(patch: Partial<Settings>): Promise<IpcResult<Settings>>
   getPreviewStats(): Promise<IpcResult<PreviewStatsDto>>
   pickLibraryRoot(): Promise<IpcResult<LibraryRootState>>
+  /** Steam Web API Key 是否已配置（密钥只存加密文件，不回传渲染层） */
+  getSteamKeyStatus(): Promise<IpcResult<SteamKeyStatusDto>>
+  /** 保存或清除（传空串）Steam Web API Key */
+  saveSteamApiKey(apiKey: string): Promise<IpcResult<SteamKeyStatusDto>>
+  /** 联网抓取商店应用目录并补全缺失的游戏名 */
+  completeGameNames(): Promise<IpcResult<CompleteNamesResultDto>>
+  /** 手动给游戏起别名（优先级最高，自动补全不会覆盖） */
+  renameGame(payload: RenameGamePayload): Promise<IpcResult<GalleryGameDto[]>>
   runDbHealth(): Promise<IpcResult<DbHealth>>
 
   discoverSources(): Promise<IpcResult<DiscoveredRootDto[]>>

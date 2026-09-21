@@ -386,6 +386,30 @@ export interface RestoreSummaryDto {
   readonly failures: readonly RestoreFailureDto[]
 }
 
+/** Steam Web API Key 状态（密钥本身不回传渲染层）。 */
+export interface SteamKeyStatusDto {
+  readonly configured: boolean
+  readonly storageAvailable: boolean
+  /** 本地已缓存的商店应用名称条数 */
+  readonly cachedNames: number
+}
+
+/** 名称补全结果。 */
+export interface CompleteNamesResultDto {
+  readonly fetched: number
+  readonly written: number
+  readonly updated: number
+  readonly pages: number
+  readonly exhausted: boolean
+  readonly error: string | null
+}
+
+export interface RenameGamePayload {
+  readonly gameKey: string
+  /** 空串表示清除别名，回到自动命名 */
+  readonly name: string
+}
+
 export interface PreviewStatsDto {
   readonly count: number
   readonly bytes: number

@@ -217,6 +217,30 @@ export const MIGRATIONS: readonly Migration[] = [
         }
       }
     }
+  },
+  {
+    version: 6,
+    description: 'Steam 商店名称缓存 + 修正早期把 AppID 当名称的数据',
+    up(db) {
+      // 商店应用目录（appid -> 名称）本地缓存：补全后断网也能显示名字
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS steam_app_names (
+          app_id     TEXT PRIMARY KEY,
+          name       TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `)
+
+      // 早期版本在拿不到名字时把 game_key 写进了 name（于是界面直接显示 steam-123456）
+      // 兜底名统一成产品约定的「未知游戏（AppID）」，不要显示成 steam-123456
+      db.prepare(
+        `UPDATE games SET name = CASE
+           WHEN kind = 'steam' AND app_id IS NOT NULL THEN '未知游戏（' || app_id || '）'
+           ELSE game_key END,
+         name_source = 'fallback'
+       WHERE name = game_key`
+      ).run()
+    }
   }
 ]
 export interface MigrationOutcome {

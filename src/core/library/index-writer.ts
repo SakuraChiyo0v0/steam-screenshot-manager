@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SqliteDatabase } from '../db/sqlite'
 import { accountKeyFor, type KnownHash, type ScanOutcome } from '../steam/scanner'
+import { shouldReplaceName, type NameCandidate } from './game-name'
 
 /** 取相对路径的最后一段，作为原文件名。 */
 function baseNameOf(relativePath: string): string {
@@ -89,6 +90,17 @@ export function writeScanOutcome(db: SqliteDatabase, input: WriteScanInput): Ind
     }
 
     // 2) 游戏
+    // 已有名称与来源：写入前比较优先级，避免扫描把补全好的名字覆盖回 AppID
+    const existingNames = new Map<string, NameCandidate>()
+    for (const row of db
+      .prepare('SELECT game_key AS gameKey, name, name_source AS nameSource FROM games')
+      .all() as { gameKey: string; name: string; nameSource: string }[]) {
+      existingNames.set(String(row.gameKey), {
+        name: String(row.name),
+        source: String(row.nameSource)
+      })
+    }
+
     const upsertGame = db.prepare(
       `INSERT INTO games (game_key, app_id, kind, name, name_source, installed, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -100,12 +112,15 @@ export function writeScanOutcome(db: SqliteDatabase, input: WriteScanInput): Ind
          updated_at = excluded.updated_at`
     )
     for (const game of outcome.games) {
+      const next = { name: game.name, source: game.nameSource }
+      const existing = existingNames.get(game.gameKey)
+      const final = shouldReplaceName(existing, next) ? next : (existing ?? next)
       upsertGame.run(
         game.gameKey,
         game.appId,
         game.kind,
-        game.name,
-        game.nameSource,
+        final.name,
+        final.source,
         game.installed ? 1 : 0,
         seenAt
       )
