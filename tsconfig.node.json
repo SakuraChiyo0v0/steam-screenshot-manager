@@ -10,6 +10,9 @@
     "vitest.config.mts"
   ],
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    // 不可达代码通常是"补丁插错位置"的信号：曾经因此让 4 个 IPC 处理器被构建器当作
+    // return 之后的死代码剔除，而类型检查当时没有任何提示。
+    "allowUnreachableCode": false
   }
 }
