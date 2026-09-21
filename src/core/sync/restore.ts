@@ -13,11 +13,13 @@
 
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { AppError } from '@shared/errors'
 import type { SqliteDatabase } from '../db/sqlite'
 import { isInsideRoot } from '../library/asset-paths'
 import {
+  hashExistingFile,
   managedRelativePath,
   metadataRelativePath,
   upsertLocalCopy,
@@ -325,20 +327,27 @@ function upsertAsset(
   return assetId
 }
 
-function alreadyRestored(
-  db: SqliteDatabase,
-  record: RemoteRecordEntry,
-  libraryRoot: string
-): boolean {
-  const row = db
-    .prepare(
-      `SELECT 1 AS ok FROM assets a
-         JOIN local_copies lc ON lc.asset_id = a.asset_id AND lc.present = 1 AND lc.library_root = ?
-        WHERE a.account_key = ? AND a.game_key = ? AND a.sha256 = ?
-        LIMIT 1`
-    )
-    .get(resolve(libraryRoot), record.accountKey, record.gameKey, record.sha256)
-  return Boolean(row)
+/**
+ * 校验本地副本是否真的可用：文件存在、字节数一致、SHA-256 一致。
+ *
+ * 只检查 local_copies.present 是不够的：文件可能已被改动、截断或删除，
+ * 那样"跳过"会把损坏副本当成恢复完成（复验报告 P1 阻塞 1）。
+ */
+async function verifyLocalCopy(
+  absolutePath: string,
+  bytes: number,
+  sha256: string
+): Promise<boolean> {
+  try {
+    const info = await stat(absolutePath)
+    if (!info.isFile() || info.size !== bytes) {
+      return false
+    }
+    const actual = await hashExistingFile(absolutePath)
+    return actual.toLowerCase() === sha256.toLowerCase()
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -435,38 +444,91 @@ export async function restoreAssets(
     }
 
     try {
-      if (alreadyRestored(db, record, libraryRoot)) {
-        skipped += 1
+      const relativePath = managedRelativePath({
+        accountKey: record.accountKey,
+        gameKey: record.gameKey,
+        sha256: record.sha256,
+        ext: record.ext
+      })
+      const absolutePath = join(libraryRoot, relativePath)
+      const verifiedAt = new Date().toISOString()
+      const existingFile = existsSync(absolutePath)
+      // 只有在内容确实可用时才允许"跳过"或补记录
+      const reusable = existingFile && (await verifyLocalCopy(absolutePath, record.bytes, record.sha256))
+
+      if (reusable) {
+        // 先保证游戏行存在，再写依赖它的资产行
+        upsertGame(db, { gameKey: record.gameKey, gameName: record.gameName, now: verifiedAt })
+        const assetId = upsertAsset(db, record, verifiedAt)
+        upsertLocalCopy(db, {
+          assetId,
+          libraryRoot,
+          relativePath,
+          bytes: record.bytes,
+          sha256: record.sha256,
+          verifiedAt
+        })
         if (options.remoteId) {
-          const localAsset = db
-            .prepare(
-              'SELECT asset_id AS assetId FROM assets WHERE account_key = ? AND game_key = ? AND sha256 = ?'
-            )
-            .get(record.accountKey, record.gameKey, record.sha256) as { assetId: string } | undefined
-          if (localAsset) {
-            markRemoteVerified(db, {
-              remoteId: options.remoteId,
-              assetId: localAsset.assetId,
-              objectKey: record.objectKey,
-              recordId: record.recordId,
-              now: new Date().toISOString()
-            })
+          markRemoteVerified(db, {
+            remoteId: options.remoteId,
+            assetId,
+            objectKey: record.objectKey,
+            recordId: record.recordId,
+            now: verifiedAt
+          })
+        }
+        skipped += 1
+      } else {
+        if (existingFile) {
+          // 内容与记录不符：隔离现有文件（不覆盖用户文件），随后重新下载
+          const quarantine = `${absolutePath}.corrupt-${Date.now()}`
+          try {
+            renameSync(absolutePath, quarantine)
+          } catch {
+            throw new AppError('LIB_HASH_MISMATCH', '本地副本内容不符且无法隔离，已停止以免覆盖文件')
           }
         }
-      } else {
-        const relativePath = managedRelativePath({
-          accountKey: record.accountKey,
-          gameKey: record.gameKey,
-          sha256: record.sha256,
-          ext: record.ext
-        })
-        const absolutePath = join(libraryRoot, relativePath)
-        const verifiedAt = new Date().toISOString()
+        const temporary = join(stagingDir, `${record.recordId}-${randomUUID()}.part`)
+        try {
+          const downloaded = await options.client.downloadToFile(record.objectKey, temporary)
+          if (!downloaded) {
+            throw new AppError('SRC_NOT_FOUND', '远端对象不存在')
+          }
+          if (downloaded.sha256 !== record.sha256 || downloaded.bytes !== record.bytes) {
+            throw new AppError('LIB_HASH_MISMATCH', '下载内容与记录指纹不一致')
+          }
 
-        if (existsSync(absolutePath)) {
-          // 文件已在但记录缺失：交给归档对账/下一次归档补记录，这里只补本地副本行
-          const assetId = upsertAsset(db, record, verifiedAt)
+          mkdirSync(dirname(absolutePath), { recursive: true })
+          if (!isInsideRoot(libraryRoot, absolutePath)) {
+            throw new AppError('LIB_PATH_INVALID', '恢复路径越出图库目录')
+          }
+          renameSync(temporary, absolutePath)
+
           upsertGame(db, { gameKey: record.gameKey, gameName: record.gameName, now: verifiedAt })
+          const assetId = upsertAsset(db, record, verifiedAt)
+
+          writeLocalMetadata(libraryRoot, metadataRelativePath(record), {
+            schemaVersion: 1,
+            assetId,
+            accountKey: record.accountKey,
+            gameKey: record.gameKey,
+            gameName: record.gameName,
+            originalFilename: record.originalFilename,
+            sha256: record.sha256,
+            bytes: record.bytes,
+            ext: record.ext,
+            width: record.width,
+            height: record.height,
+            capturedAt: record.capturedAt,
+            captureTimeSource: record.captureTimeSource,
+            archivedAt: verifiedAt,
+            restoredFrom: {
+              libraryId: options.libraryId,
+              recordId: record.recordId,
+              objectKey: record.objectKey
+            }
+          })
+
           upsertLocalCopy(db, {
             assetId,
             libraryRoot,
@@ -484,71 +546,10 @@ export async function restoreAssets(
               now: verifiedAt
             })
           }
-          skipped += 1
-        } else {
-          const temporary = join(stagingDir, `${record.recordId}-${randomUUID()}.part`)
-          try {
-            const downloaded = await options.client.downloadToFile(record.objectKey, temporary)
-            if (!downloaded) {
-              throw new AppError('SRC_NOT_FOUND', '远端对象不存在')
-            }
-            if (downloaded.sha256 !== record.sha256 || downloaded.bytes !== record.bytes) {
-              throw new AppError('LIB_HASH_MISMATCH', '下载内容与记录指纹不一致')
-            }
-
-            mkdirSync(dirname(absolutePath), { recursive: true })
-            if (!isInsideRoot(libraryRoot, absolutePath)) {
-              throw new AppError('LIB_PATH_INVALID', '恢复路径越出图库目录')
-            }
-            renameSync(temporary, absolutePath)
-
-            upsertGame(db, { gameKey: record.gameKey, gameName: record.gameName, now: verifiedAt })
-            const assetId = upsertAsset(db, record, verifiedAt)
-
-            writeLocalMetadata(libraryRoot, metadataRelativePath(record), {
-              schemaVersion: 1,
-              assetId,
-              accountKey: record.accountKey,
-              gameKey: record.gameKey,
-              gameName: record.gameName,
-              originalFilename: record.originalFilename,
-              sha256: record.sha256,
-              bytes: record.bytes,
-              ext: record.ext,
-              width: record.width,
-              height: record.height,
-              capturedAt: record.capturedAt,
-              captureTimeSource: record.captureTimeSource,
-              archivedAt: verifiedAt,
-              restoredFrom: {
-                libraryId: options.libraryId,
-                recordId: record.recordId,
-                objectKey: record.objectKey
-              }
-            })
-
-            upsertLocalCopy(db, {
-              assetId,
-              libraryRoot,
-              relativePath,
-              bytes: record.bytes,
-              sha256: record.sha256,
-              verifiedAt
-            })
-            if (options.remoteId) {
-              markRemoteVerified(db, {
-                remoteId: options.remoteId,
-                assetId,
-                objectKey: record.objectKey,
-                recordId: record.recordId,
-                now: verifiedAt
-              })
-            }
-            restored += 1
-          } catch (error) {
-            rmSync(temporary, { force: true })
-            throw error
-          }
+          restored += 1
+        } catch (error) {
+          rmSync(temporary, { force: true })
+          throw error
         }
       }
     } catch (error) {

@@ -7,6 +7,7 @@ import { migrate } from '@core/db/migrations'
 import type { SqliteDatabase } from '@core/db/sqlite'
 import {
   archiveAssets,
+  copyWithHash,
   localCopyState,
   managedRelativePath,
   planArchive,
@@ -247,6 +248,17 @@ describe('归档：复制进独立图库', () => {
     const second = reconcileLibrary(db, libraryRoot)
     expect(second.missing).toBe(1)
     expect(localCopyState(db, libraryRoot)).toEqual({ archived: 0, missing: 1 })
+  })
+
+  it('复制到不可写目标时以拒绝方式失败，不抛未捕获错误（复验 P1 阻塞 2）', async () => {
+    const source = join(workDir, 'source.bin')
+    writeFileSync(source, 'payload', 'utf8')
+
+    // 目标目录不存在：输出流会在打开时出错，必须变成 Promise 拒绝而不是未捕获的 'error' 事件
+    await expect(copyWithHash(source, join(workDir, 'no-such-dir', 'target.bin'))).rejects.toThrow()
+
+    // 进程仍然可用（未捕获的流错误会直接终止测试进程）
+    expect(existsSync(source)).toBe(true)
   })
 
   it('归档计划只包含未归档资产', async () => {

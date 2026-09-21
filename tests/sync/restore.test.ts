@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -65,9 +65,14 @@ function toRecord(
 }
 
 /** 只实现恢复需要的下载能力：从"远端"目录复制到目标路径并算哈希。 */
-function fakeClient(options: { corrupt?: boolean } = {}): DavClient {
+function fakeClient(
+  options: { corrupt?: boolean; counter?: { downloads: number } } = {}
+): DavClient {
   return {
     async downloadToFile(relativePath: string, targetPath: string) {
+      if (options.counter) {
+        options.counter.downloads += 1
+      }
       const source = join(remoteDir, ...relativePath.split('/'))
       if (!existsSync(source)) {
         return null
@@ -285,6 +290,98 @@ describe('恢复执行', () => {
         }).n
       )
     ).toBe(1)
+  })
+
+  it('本地副本完好时跳过且不下载', async () => {
+    const a = putRemoteObject('a.jpg', 'content-a')
+    const records = [toRecord(a, 1)]
+    await restoreAssets(db, { libraryRoot, libraryId: LIBRARY_ID, client: fakeClient(), records })
+
+    const counter = { downloads: 0 }
+    const result = await restoreAssets(db, {
+      libraryRoot,
+      libraryId: LIBRARY_ID,
+      client: fakeClient({ counter }),
+      records
+    })
+
+    expect(result.skipped).toBe(1)
+    expect(result.restored).toBe(0)
+    expect(counter.downloads).toBe(0)
+  })
+
+  it('本地副本被改动时不得跳过：重新下载并隔离坏文件（复验 P1 阻塞 1）', async () => {
+    const a = putRemoteObject('a.jpg', 'content-a')
+    const records = [toRecord(a, 1)]
+    await restoreAssets(db, { libraryRoot, libraryId: LIBRARY_ID, client: fakeClient(), records })
+
+    const relativePath = `originals/${ACCOUNT_KEY}/${GAME_KEY}/${a.sha256}.jpg`
+    writeFileSync(join(libraryRoot, relativePath), 'corrupted-content')
+
+    const counter = { downloads: 0 }
+    const result = await restoreAssets(db, {
+      libraryRoot,
+      libraryId: LIBRARY_ID,
+      client: fakeClient({ counter }),
+      records
+    })
+
+    expect(counter.downloads).toBe(1)
+    expect(result.restored).toBe(1)
+    expect(result.skipped).toBe(0)
+    expect(result.failed).toBe(0)
+    // 内容已修回，坏文件被隔离而不是被覆盖丢弃
+    expect(readFileSync(join(libraryRoot, relativePath), 'utf8')).toBe('content-a')
+    const siblings = readdirSync(dirname(join(libraryRoot, relativePath)))
+    expect(siblings.some((name: string) => name.includes('.corrupt-'))).toBe(true)
+  })
+
+  it('数据库里有副本行但文件缺失时重新下载（复验 P1 阻塞 1）', async () => {
+    const a = putRemoteObject('a.jpg', 'content-a')
+    const records = [toRecord(a, 1)]
+    await restoreAssets(db, { libraryRoot, libraryId: LIBRARY_ID, client: fakeClient(), records })
+
+    const relativePath = `originals/${ACCOUNT_KEY}/${GAME_KEY}/${a.sha256}.jpg`
+    rmSync(join(libraryRoot, relativePath), { force: true })
+
+    const counter = { downloads: 0 }
+    const result = await restoreAssets(db, {
+      libraryRoot,
+      libraryId: LIBRARY_ID,
+      client: fakeClient({ counter }),
+      records
+    })
+
+    expect(counter.downloads).toBe(1)
+    expect(result.restored).toBe(1)
+    expect(existsSync(join(libraryRoot, relativePath))).toBe(true)
+  })
+
+  it('没有副本行且文件损坏时不得补记已校验（复验 P1 阻塞 1）', async () => {
+    const a = putRemoteObject('a.jpg', 'content-a')
+    const records = [toRecord(a, 1)]
+    await restoreAssets(db, { libraryRoot, libraryId: LIBRARY_ID, client: fakeClient(), records })
+
+    const relativePath = `originals/${ACCOUNT_KEY}/${GAME_KEY}/${a.sha256}.jpg`
+    writeFileSync(join(libraryRoot, relativePath), 'corrupted-content')
+    db.prepare('DELETE FROM local_copies').run()
+
+    const counter = { downloads: 0 }
+    const result = await restoreAssets(db, {
+      libraryRoot,
+      libraryId: LIBRARY_ID,
+      client: fakeClient({ counter }),
+      records
+    })
+
+    expect(counter.downloads).toBe(1)
+    expect(result.restored).toBe(1)
+    expect(readFileSync(join(libraryRoot, relativePath), 'utf8')).toBe('content-a')
+    const copy = db
+      .prepare('SELECT sha256, bytes, present FROM local_copies LIMIT 1')
+      .get() as { sha256: string; bytes: number; present: number }
+    expect(copy.sha256).toBe(a.sha256)
+    expect(copy.present).toBe(1)
   })
 
   it('取消后保留已完成部分', async () => {

@@ -23,6 +23,8 @@ import {
   writeFileSync
 } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { AppError } from '@shared/errors'
 import { isInsideRoot } from './asset-paths'
 import { resolveExistingAssetPath } from './asset-paths'
@@ -183,39 +185,38 @@ export function metadataRelativePath(candidate: {
   return `metadata/${candidate.accountKey}/${candidate.gameKey}/${candidate.sha256}.json`
 }
 
-/** 流式复制并同时计算 SHA-256；不把整文件读入内存。 */
+/**
+ * 流式复制并同时计算 SHA-256；不把整文件读入内存。
+ *
+ * 用 `stream/promises.pipeline` 串起来：它从建立流的那一刻就接管错误，
+ * 失败时销毁所有流、关闭句柄，并把错误变成 Promise 拒绝交给调用方。
+ * （手工 write/drain 的写法曾经在"目标不可写"时抛出未捕获的 'error' 事件，
+ * 外层 try/catch 抓不到，会直接打断整个任务。）
+ */
 export async function copyWithHash(
   sourcePath: string,
   targetPath: string
 ): Promise<{ sha256: string; bytes: number }> {
   const hash = createHash('sha256')
   let bytes = 0
-  const output = createWriteStream(targetPath)
-  const input = createReadStream(sourcePath, { highWaterMark: 1024 * 1024 })
-
-  try {
-    for await (const chunk of input) {
-      const buffer = chunk as Buffer
-      hash.update(buffer)
-      bytes += buffer.length
-      if (!output.write(buffer)) {
-        await new Promise<void>((resolveDrain) => output.once('drain', () => resolveDrain()))
-      }
+  const meter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      hash.update(chunk)
+      bytes += chunk.length
+      callback(null, chunk)
     }
-    await new Promise<void>((resolveEnd, rejectEnd) => {
-      output.end(() => resolveEnd())
-      output.on('error', rejectEnd)
-    })
-  } catch (error) {
-    input.destroy()
-    output.destroy()
-    throw error
-  }
+  })
+
+  await pipeline(
+    createReadStream(sourcePath, { highWaterMark: 1024 * 1024 }),
+    meter,
+    createWriteStream(targetPath)
+  )
 
   return { sha256: hash.digest('hex'), bytes }
 }
 
-async function hashExistingFile(filePath: string): Promise<string> {
+export async function hashExistingFile(filePath: string): Promise<string> {
   const hash = createHash('sha256')
   const stream = createReadStream(filePath, { highWaterMark: 1024 * 1024 })
   for await (const chunk of stream) {
