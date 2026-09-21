@@ -5,6 +5,7 @@
  * 已完成的成果在取消后保留，重跑继续。
  */
 
+import { join } from 'node:path'
 import { BrowserWindow } from 'electron'
 import { AppError } from '@shared/errors'
 import { IPC_EVENTS } from '@shared/ipc'
@@ -104,11 +105,12 @@ export function requireLibraryRoot(): string {
  */
 function warmUpPreviews(db: SqliteDatabase, libraryRoot: string): void {
   try {
-    const pending = planPreviews(db, libraryRoot)
+    const cacheRoot = join(libraryRoot, 'cache')
+    const pending = planPreviews(db, cacheRoot)
     requestPreviewWarmup(
       pending.slice(0, 2_000).map((candidate) => ({
         assetId: candidate.assetId,
-        libraryRoot,
+        cacheRoot,
         sha256: candidate.sha256,
         sourceRoot: candidate.sourceRoot,
         relativePath: candidate.relativePath

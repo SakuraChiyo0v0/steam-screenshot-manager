@@ -31,9 +31,10 @@ export async function runBuildPreviews(target: string, mini = false): Promise<vo
       throw new AppError('LIB_PATH_INVALID', `图库目录不存在：${libraryRoot}`)
     }
     mkdirSync(join(libraryRoot, 'cache', 'previews'), { recursive: true })
+    const cacheRoot = join(libraryRoot, 'cache')
 
     const size = mini ? ('mini' as const) : ('preview' as const)
-    const candidates = planPreviews(context.database.db, libraryRoot, size)
+    const candidates = planPreviews(context.database.db, cacheRoot, size)
     process.stdout.write(`[预览] 待生成 ${candidates.length} 张\n`)
 
     let created = 0
@@ -46,7 +47,7 @@ export async function runBuildPreviews(target: string, mini = false): Promise<vo
       try {
         const sourcePath = await resolveExistingAssetPath(candidate.sourceRoot, candidate.relativePath)
         const result = generatePreview({
-          libraryRoot,
+          cacheRoot,
           sha256: candidate.sha256,
           sourcePath,
           size
@@ -71,7 +72,7 @@ export async function runBuildPreviews(target: string, mini = false): Promise<vo
     }
 
     const durationMs = Date.now() - startedAt
-    const stats = previewStats(libraryRoot, size)
+    const stats = previewStats(cacheRoot, size)
     const report = {
       mode: 'build-previews',
       libraryRoot,

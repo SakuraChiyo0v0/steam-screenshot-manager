@@ -60,7 +60,7 @@ import { assetUrl, miniUrl, thumbnailUrl } from './asset-protocol'
 import { getAppContext } from './app-context'
 import { applyLoginItem } from './index'
 import { rescheduleAutoCollect } from './auto-collect'
-import { previewStats } from '@core/library/previews'
+import { previewStats, resolvePreviewCacheRoot } from '@core/library/previews'
 import { previewQueueStats } from './preview-queue'
 import {
   parseArchiveStart,
@@ -235,7 +235,9 @@ export function registerIpcHandlers(): void {
   handle(IPC_CHANNELS.libraryPreviewStats, (): PreviewStatsDto => {
     const { database } = getAppContext()
     const settings = readSettings(database.db)
-    const stats = settings.libraryRoot ? previewStats(settings.libraryRoot) : { count: 0, bytes: 0 }
+    const stats = previewStats(
+      resolvePreviewCacheRoot({ libraryRoot: settings.libraryRoot ?? '', userDataRoot: app.getPath('userData') })
+    )
     const queue = previewQueueStats()
     return { count: stats.count, bytes: stats.bytes, pending: queue.pending, generated: queue.generated }
   })

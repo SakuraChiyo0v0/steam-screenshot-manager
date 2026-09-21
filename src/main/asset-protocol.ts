@@ -11,7 +11,7 @@ import { net, protocol } from 'electron'
 import { AppError } from '@shared/errors'
 import { resolveExistingAssetPath, thumbnailPathFor } from '@core/library/asset-paths'
 import { findAssetLocation } from '@core/library/queries'
-import { previewAbsolutePath, type PreviewSize } from '@core/library/previews'
+import { previewAbsolutePath, resolvePreviewCacheRoot, type PreviewSize } from '@core/library/previews'
 import { chooseImageSource } from '@shared/image-source'
 import { readSettings } from '@core/settings/settings-store'
 import { getAppContext } from './app-context'
@@ -59,7 +59,8 @@ export function registerAssetScheme(): void {
   ])
 }
 
-export function registerAssetProtocol(): void {
+/** `userDataRoot` 用于没有图库时把预览缓存放到用户数据目录。 */
+export function registerAssetProtocol(userDataRoot: string): void {
   protocol.handle(ASSET_SCHEME, async (request) => {
     try {
       const url = new URL(request.url)
@@ -81,17 +82,19 @@ export function registerAssetProtocol(): void {
       }
 
       const settings = readSettings(database.db)
+      const previewCacheRoot = resolvePreviewCacheRoot({
+        libraryRoot: settings.libraryRoot ?? '',
+        userDataRoot
+      })
 
       const originalPath = await resolveExistingAssetPath(location.rootPath, location.relativePath)
 
       if (wantsThumbnail) {
         const size: PreviewSize = wantsMini ? 'mini' : 'preview'
         // 1) 自建预览：尺寸与体积都优于 Steam 缩略图，且恢复出来的图库也有
-        if (settings.libraryRoot) {
-          const previewPath = previewAbsolutePath(settings.libraryRoot, location.sha256, size)
-          if (existsSync(previewPath)) {
-            return await fileResponse(previewPath)
-          }
+        const previewPath = previewAbsolutePath(previewCacheRoot, location.sha256, size)
+        if (existsSync(previewPath)) {
+          return await fileResponse(previewPath)
         }
 
         // 记录"用户正在浏览"，队列据此决定让出多少时间
@@ -106,16 +109,14 @@ export function registerAssetProtocol(): void {
         })
 
         // 无论走哪条回退，都排队补预览，下次请求即可用上
-        if (settings.libraryRoot) {
-          requestPreview({
-            assetId,
-            libraryRoot: settings.libraryRoot,
-            sha256: location.sha256,
-            sourceRoot: location.rootPath,
-            relativePath: location.relativePath,
-            size
-          })
-        }
+        requestPreview({
+          assetId,
+          cacheRoot: previewCacheRoot,
+          sha256: location.sha256,
+          sourceRoot: location.rootPath,
+          relativePath: location.relativePath,
+          size
+        })
 
         if (source === 'source-thumbnail') {
           try {

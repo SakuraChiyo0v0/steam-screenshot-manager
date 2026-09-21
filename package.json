@@ -1,6 +1,6 @@
 {
   "name": "steam-screenshot-manager",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "本地优先的 Steam 截图管理与 WebDAV 备份桌面应用",
   "author": "SakuraChiyo0v0",

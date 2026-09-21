@@ -323,7 +323,7 @@ if (!hasSingleInstanceLock) {
     }
 
     registerIpcHandlers()
-    registerAssetProtocol()
+    registerAssetProtocol(app.getPath('userData'))
     mainWindow = createWindow()
 
     // 托盘：不打开窗口也能看到状态与触发收集

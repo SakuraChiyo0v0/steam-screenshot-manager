@@ -30,7 +30,7 @@ const MAX_QUEUE = 2_000
 
 export interface PreviewTask {
   readonly assetId: string
-  readonly libraryRoot: string
+  readonly cacheRoot: string
   readonly sha256: string
   readonly sourceRoot: string
   readonly relativePath: string
@@ -55,7 +55,7 @@ class PreviewQueue {
   private failed = 0
 
   private keyOf(task: PreviewTask): string {
-    return `${task.libraryRoot}|${task.sha256}|${task.size ?? 'preview'}`
+    return `${task.cacheRoot}|${task.sha256}|${task.size ?? 'preview'}`
   }
 
   /** 标记有图片请求到达（用于判断用户是否在浏览）。 */
@@ -66,7 +66,7 @@ class PreviewQueue {
 
   enqueue(task: PreviewTask, front = false): void {
     const size = task.size ?? 'preview'
-    if (hasPreview(task.libraryRoot, task.sha256, size)) {
+    if (hasPreview(task.cacheRoot, task.sha256, size)) {
       return
     }
     const key = this.keyOf(task)
@@ -125,7 +125,7 @@ class PreviewQueue {
           const sourcePath = await resolveExistingAssetPath(task.sourceRoot, task.relativePath)
           const startedAt = Date.now()
           const result = generatePreview({
-            libraryRoot: task.libraryRoot,
+            cacheRoot: task.cacheRoot,
             sha256: task.sha256,
             sourcePath,
             size
@@ -138,9 +138,9 @@ class PreviewQueue {
               broadcastPreviewReady({ assetId: task.assetId, size })
               // 顺带把另一个尺寸也从同一张已解码的图生成出来，省一次 4K 解码
               const other: PreviewSize = size === 'preview' ? 'mini' : 'preview'
-              if (!hasPreview(task.libraryRoot, task.sha256, other)) {
+              if (!hasPreview(task.cacheRoot, task.sha256, other)) {
                 generatePreview({
-                  libraryRoot: task.libraryRoot,
+                  cacheRoot: task.cacheRoot,
                   sha256: task.sha256,
                   sourcePath,
                   size: other
