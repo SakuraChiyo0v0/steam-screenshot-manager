@@ -56,5 +56,7 @@ bridgeEvent('onArchiveProgress', IPC_EVENTS.archiveProgress)
 unbridgeEvent('offArchiveProgress', IPC_EVENTS.archiveProgress)
 bridgeEvent('onExportProgress', IPC_EVENTS.exportProgress)
 unbridgeEvent('offExportProgress', IPC_EVENTS.exportProgress)
+bridgeEvent('onUploadProgress', IPC_EVENTS.uploadProgress)
+unbridgeEvent('offUploadProgress', IPC_EVENTS.uploadProgress)
 
 contextBridge.exposeInMainWorld('api', api)

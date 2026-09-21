@@ -145,6 +145,49 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec('CREATE INDEX IF NOT EXISTS idx_local_copies_asset ON local_copies (asset_id, present)')
       db.exec('CREATE INDEX IF NOT EXISTS idx_local_copies_root ON local_copies (library_root, present)')
     }
+  },
+  {
+    version: 4,
+    description: '建立远端与远端对象表 remotes、remote_objects',
+    up(db) {
+      // 远端图库连接。密码不进这里，只存不可逆的凭据引用键。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS remotes (
+          remote_id         TEXT PRIMARY KEY,
+          library_id        TEXT NOT NULL,
+          base_url          TEXT NOT NULL,
+          root_path         TEXT NOT NULL,
+          credential_ref    TEXT NOT NULL,
+          format_version    INTEGER NOT NULL,
+          created_at        TEXT NOT NULL,
+          last_check_at     TEXT,
+          last_check_status TEXT
+        )
+      `)
+
+      // 资产在某个远端上的物理对象与记录状态。publish_status 只在读回校验通过后前进。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS remote_objects (
+          remote_object_id TEXT PRIMARY KEY,
+          remote_id        TEXT NOT NULL,
+          asset_id         TEXT NOT NULL,
+          object_key       TEXT NOT NULL,
+          record_id        TEXT NOT NULL,
+          upload_id        TEXT NOT NULL,
+          publish_status   TEXT NOT NULL,
+          verified_at      TEXT,
+          last_error       TEXT,
+          attempt_count    INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at  TEXT,
+          created_at       TEXT NOT NULL,
+          updated_at       TEXT NOT NULL,
+          UNIQUE (remote_id, asset_id)
+        )
+      `)
+      db.exec(
+        'CREATE INDEX IF NOT EXISTS idx_remote_objects_status ON remote_objects (remote_id, publish_status)'
+      )
+    }
   }
 ]
 

@@ -18,6 +18,7 @@ import { disposeAppContext, initAppContext, type AppContext } from './app-contex
 import { registerIpcHandlers } from './ipc'
 import { readVerifyScanTarget, runVerifyScan } from './verify-scan'
 import { readVerifyArchiveTarget, runVerifyArchive } from './verify-archive'
+import { readVerifyUploadTarget, runVerifyUpload } from './verify-upload'
 import { reconcileNow } from './archive-job'
 
 const SELF_CHECK_FLAG = '--self-check'
@@ -199,6 +200,7 @@ async function runSelfCheck(): Promise<void> {
 const isToolMode =
   readVerifyScanTarget(process.argv) !== null ||
   readVerifyArchiveTarget(process.argv) !== null ||
+  readVerifyUploadTarget(process.argv) !== null ||
   process.argv.includes(SELF_CHECK_FLAG)
 
 // 工具模式（自检 / 扫描验证）不参与单实例锁：它们不创建窗口，
@@ -224,6 +226,13 @@ if (!hasSingleInstanceLock) {
     const verifyArchiveTarget = readVerifyArchiveTarget(process.argv)
     if (verifyArchiveTarget) {
       await runVerifyArchive(verifyArchiveTarget, process.argv)
+      return
+    }
+
+    // 真机上传验证入口（工具模式，不创建窗口）
+    const verifyUploadTarget = readVerifyUploadTarget(process.argv)
+    if (verifyUploadTarget) {
+      await runVerifyUpload(verifyUploadTarget, process.argv)
       return
     }
 

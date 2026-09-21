@@ -250,3 +250,61 @@ export interface LibraryCopyStateDto {
   readonly missing: number
   readonly assets: number
 }
+
+/* ------------------------------------------------------------------ *
+ * 远端备份（WebDAV）
+ * ------------------------------------------------------------------ */
+
+export interface CapabilityItemDto {
+  readonly name: string
+  readonly ok: boolean
+  readonly detail: string
+}
+
+export interface RemoteConnectionDto {
+  readonly remoteId: string
+  readonly libraryId: string
+  readonly baseUrl: string
+  readonly lastCheckStatus: string
+  readonly capabilities: readonly CapabilityItemDto[]
+}
+
+export interface RemoteStateDto {
+  readonly connected: boolean
+  readonly baseUrl: string | null
+  readonly libraryId: string | null
+  readonly lastCheckAt: string | null
+  readonly lastCheckStatus: string | null
+  readonly credentialStored: boolean
+  readonly credentialStorageAvailable: boolean
+  readonly assets: number
+  readonly verified: number
+  readonly pending: number
+  readonly failed: number
+  readonly libraryRoot: string | null
+}
+
+export interface UploadStatusDto {
+  readonly running: boolean
+  readonly processed: number
+  readonly total: number | null
+  readonly currentFile: string | null
+  readonly verified: number
+  readonly uploaded: number
+  readonly failed: number
+  readonly startedAt: string | null
+  readonly finishedAt: string | null
+  readonly errorCode: string | null
+  readonly errorMessage: string | null
+}
+
+export interface UploadSummaryDto {
+  readonly total: number
+  readonly verified: number
+  readonly uploaded: number
+  readonly failed: number
+  readonly cancelled: boolean
+  readonly abortedByAuth: boolean
+  readonly durationMs: number
+  readonly libraryId: string
+}

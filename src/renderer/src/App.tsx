@@ -17,10 +17,6 @@ import {
   DesktopIcon,
   CaretRightIcon,
   WarningCircleIcon,
-  ClockIcon,
-  PauseIcon,
-  PlayIcon,
-  CheckCircleIcon,
   ArrowsClockwiseIcon,
   TrashIcon,
   ArrowClockwiseIcon
@@ -31,8 +27,11 @@ import type {
   DiscoveredRootDto,
   GalleryAssetDto,
   GalleryGameDto,
+  CapabilityItemDto,
   LibraryCopyStateDto,
   LibraryStatsDto,
+  RemoteStateDto,
+  UploadStatusDto,
   RegisteredSourceDto,
   ScanProgressDto,
   ScanStatusDto,
@@ -116,9 +115,11 @@ export function App() {
 
   const [viewer, setViewer] = useState<{ items: ViewerItem[]; index: number } | null>(null)
   const [toast, setToast] = useState('')
-  const [syncDemo, setSyncDemo] = useState(false)
-  const [paused, setPaused] = useState(false)
-  const [syncFilter, setSyncFilter] = useState('全部任务')
+  const [remoteState, setRemoteState] = useState<RemoteStateDto | null>(null)
+  const [uploadStatus, setUploadStatus] = useState<UploadStatusDto | null>(null)
+  const [connectForm, setConnectForm] = useState({ baseUrl: '', username: '', password: '' })
+  const [connecting, setConnecting] = useState(false)
+  const [capabilities, setCapabilities] = useState<CapabilityItemDto[] | null>(null)
   const [diagnostics, setDiagnostics] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [copyState, setCopyState] = useState<LibraryCopyStateDto | null>(null)
@@ -246,6 +247,27 @@ export function App() {
     api.onArchiveProgress((status: ArchiveStatusDto) => setArchiveStatus(status))
     return () => api.offArchiveProgress()
   }, [])
+
+  /** 上传进度事件订阅。 */
+  useEffect(() => {
+    const api = getApi()
+    if (!api) return
+    api.onUploadProgress((status: UploadStatusDto) => setUploadStatus(status))
+    return () => api.offUploadProgress()
+  }, [])
+
+  const refreshRemoteState = useCallback(async () => {
+    if (!hasApi) return
+    try {
+      setRemoteState(await call((api) => api.getRemoteState()))
+    } catch {
+      /* 远端状态读取失败不影响其它功能 */
+    }
+  }, [hasApi])
+
+  useEffect(() => {
+    void refreshRemoteState()
+  }, [refreshRemoteState])
 
   const refreshCopyState = useCallback(async () => {
     if (!hasApi) return
@@ -477,6 +499,66 @@ export function App() {
     }
   }
 
+  const connectRemoteAction = async () => {
+    setConnecting(true)
+    try {
+      const result = await call((api) =>
+        api.connectRemote({
+          baseUrl: connectForm.baseUrl,
+          username: connectForm.username,
+          password: connectForm.password
+        })
+      )
+      setCapabilities([...result.capabilities])
+      setConnectForm((current) => ({ ...current, password: '' }))
+      setToast(
+        result.capabilities.every((item) => item.ok)
+          ? `已连接远端，使用图库 ${result.libraryId}。`
+          : `已连接，但有 ${result.capabilities.filter((item) => !item.ok).length} 项能力测试未通过。`
+      )
+      await refreshRemoteState()
+    } catch (error) {
+      setCapabilities(null)
+      setToast(errorMessage(error))
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const disconnectRemoteAction = async () => {
+    try {
+      setRemoteState(await call((api) => api.disconnectRemote()))
+      setCapabilities(null)
+      setToast('已断开远端存储，并删除本机保存的凭据。')
+      await refreshRemoteState()
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
+  }
+
+  const startUpload = async (forceRetry = false) => {
+    setToast(forceRetry ? '正在重试失败项…' : '备份已开始，可以继续浏览界面。')
+    try {
+      const summary = await call((api) => api.startUpload(forceRetry ? { forceRetry: true } : {}))
+      setToast(
+        `备份完成：计划 ${summary.total}，已校验 ${summary.verified}（新传 ${summary.uploaded}），失败 ${summary.failed}，耗时 ${(summary.durationMs / 1000).toFixed(1)} 秒${summary.cancelled ? '（已取消）' : ''}${summary.abortedByAuth ? '（远端拒绝认证）' : ''}。`
+      )
+      await refreshRemoteState()
+    } catch (error) {
+      setToast(errorMessage(error))
+      await refreshRemoteState()
+    }
+  }
+
+  const cancelUpload = async () => {
+    try {
+      setUploadStatus(await call((api) => api.cancelUpload()))
+      setToast('已请求暂停，当前文件传完后停止；已完成的备份保留。')
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
+  }
+
   const startArchive = async () => {
     setToast('归档已开始，可以继续浏览界面。')
     try {
@@ -526,6 +608,8 @@ export function App() {
   const selectedScanSource = sources.find((source) => source.sourceId === scanSourceId) ?? null
   const scanRunning = scanStatus?.running === true
   const archiveRunning = archiveStatus?.running === true
+  const uploadRunning = uploadStatus?.running === true
+  const remoteConnected = remoteState?.connected === true
   const scanProgressLabel = scanStatus
     ? scanStatus.total === null
       ? `正在统计文件（已发现 ${scanStatus.processed}）`
@@ -978,91 +1062,99 @@ export function App() {
 
         {page === 'sync' && (
           <>
-            <div className="connection-banner">
-              <span className="connection-icon">
-                <CloudArrowUpIcon size={29} />
-              </span>
-              <div>
-                <h2>还没有连接远端存储</h2>
-                <p>使用自己的 WebDAV，让截图有处可存。本阶段尚未接入上传。</p>
-              </div>
-              <button onClick={() => navigate('settings')}>
-                配置存储
-                <ArrowRightIcon size={17} />
-              </button>
-            </div>
-            <div className="section-heading">
-              <h2>传输任务</h2>
-              <button className="text-button" onClick={() => setSyncDemo(!syncDemo)}>
-                {syncDemo ? '隐藏界面示例' : '查看界面示例'}
-              </button>
-            </div>
-            {!syncDemo ? (
-              <div className="empty-state">
-                <CloudArrowUpIcon size={56} weight="light" />
-                <h2>这里将记录每一次安心备份</h2>
-                <p>连接存储后，上传和下载任务会出现在这里。</p>
-                <span className="demo-pill">当前仅展示界面，不执行同步</span>
+            {!remoteConnected ? (
+              <div className="connection-banner">
+                <span className="connection-icon">
+                  <CloudArrowUpIcon size={29} />
+                </span>
+                <div>
+                  <h2>还没有连接远端存储</h2>
+                  <p>使用自己的 WebDAV。连接后可以先备份，再在另一台电脑恢复。</p>
+                </div>
+                <button onClick={() => navigate('settings')}>
+                  配置存储
+                  <ArrowRightIcon size={17} />
+                </button>
               </div>
             ) : (
-              <div className="task-panel">
-                <div className="task-toolbar">
-                  <div className="tabs">
-                    {['全部任务', '待处理', '需重试'].map((item) => (
-                      <button
-                        className={syncFilter === item ? 'active' : ''}
-                        key={item}
-                        onClick={() => setSyncFilter(item)}
-                      >
-                        {item}
-                      </button>
-                    ))}
+              <>
+                <div className="connection-banner">
+                  <span className="connection-icon">
+                    <CloudArrowUpIcon size={29} />
+                  </span>
+                  <div>
+                    <h2>{remoteState?.baseUrl}</h2>
+                    <p>
+                      图库 {remoteState?.libraryId} · 上次检查{' '}
+                      {remoteState?.lastCheckAt
+                        ? remoteState.lastCheckAt.slice(0, 16).replace('T', ' ')
+                        : '—'}
+                      （{remoteState?.lastCheckStatus ?? '未知'}）
+                    </p>
                   </div>
-                  <button onClick={() => setPaused(!paused)}>
-                    {paused ? <PlayIcon size={16} /> : <PauseIcon size={16} />}{' '}
-                    {paused ? '继续示例' : '暂停示例'}
-                  </button>
+                  {uploadRunning ? (
+                    <button onClick={() => void cancelUpload()}>暂停</button>
+                  ) : (
+                    <button
+                      className="primary"
+                      disabled={!remoteState?.libraryRoot}
+                      onClick={() => void startUpload(false)}
+                    >
+                      开始备份
+                      <ArrowRightIcon size={17} />
+                    </button>
+                  )}
                 </div>
-                {viewerItems.slice(0, 3).map((item, i) => (
-                  <div className="task-row" key={item.id}>
-                    {item.available ? <img src={item.thumbSrc} alt="" /> : <span />}
+                {uploadRunning ? (
+                  <div className="error-banner inline" role="status">
+                    <ArrowsClockwiseIcon size={20} />
                     <div>
-                      <strong>{item.title}</strong>
-                      <span>{item.gameName} · 上传任务（界面示例）</span>
+                      <strong>正在上传</strong>
+                      <p>
+                        {uploadStatus?.total === null
+                          ? `正在规划（已处理 ${uploadStatus?.processed ?? 0}）`
+                          : `${uploadStatus?.processed ?? 0} / ${uploadStatus?.total ?? 0}`}
+                        {' · '}已校验 {uploadStatus?.verified ?? 0}
+                        {uploadStatus?.failed ? ` · 失败 ${uploadStatus.failed}` : ''}
+                        {uploadStatus?.currentFile ? ` · ${uploadStatus.currentFile}` : ''}
+                      </p>
                     </div>
-                    <span className={`task-state state-${i}`}>
-                      {i === 0 ? (
-                        <ClockIcon size={17} />
-                      ) : i === 1 ? (
-                        <WarningCircleIcon size={17} />
-                      ) : (
-                        <CheckCircleIcon size={17} />
-                      )}{' '}
-                      {i === 0
-                        ? paused
-                          ? '已暂停'
-                          : '等待上传'
-                        : i === 1
-                          ? '连接中断'
-                          : '已备份（示例）'}
-                    </span>
-                    {i === 1 && (
-                      <button
-                        onClick={() => setToast('重试操作预览：未连接 WebDAV，也未发送文件。')}
-                      >
-                        重试
-                      </button>
-                    )}
                   </div>
-                ))}
-                <p className="panel-note">
-                  以上为静态界面示例，未发生实际传输，也不代表任何截图已备份。
-                </p>
-              </div>
+                ) : null}
+                <div className="task-panel">
+                  <div className="task-toolbar">
+                    <div className="tabs">
+                      <button className="active">全部 {remoteState?.assets ?? 0}</button>
+                      <button>已备份 {remoteState?.verified ?? 0}</button>
+                      <button>待备份 {remoteState?.pending ?? 0}</button>
+                      <button>失败 {remoteState?.failed ?? 0}</button>
+                    </div>
+                    <div className="actions">
+                      <button
+                        disabled={uploadRunning || (remoteState?.failed ?? 0) === 0}
+                        onClick={() => void startUpload(true)}
+                      >
+                        重试失败项
+                      </button>
+                      <button onClick={() => void disconnectRemoteAction()}>断开连接</button>
+                    </div>
+                  </div>
+                  <p className="panel-note">
+                    只有「上传对象 → 读回校验哈希 → 发布记录 → 读回校验记录」全部通过，才会记为已备份。本机删除不会传播到远端。
+                  </p>
+                  {!remoteState?.libraryRoot ? (
+                    <p className="panel-note">
+                      还没有本地图库目录：请先在设置里选择目录并完成归档，再开始备份。
+                    </p>
+                  ) : null}
+                  {uploadStatus?.errorMessage ? (
+                    <p className="panel-note">上次错误：{uploadStatus.errorMessage}</p>
+                  ) : null}
+                </div>
+              </>
             )}
           </>
         )}
-
         {page === 'settings' && (
           <div className="settings-stack">
             <section className="settings-card">
@@ -1125,45 +1217,85 @@ export function App() {
                   <h2>远端存储</h2>
                   <p>支持连接 WebDAV。可以是 NAS，也可以是你选择的网盘。</p>
                 </div>
-                <span className="demo-pill">未接入</span>
+                <span className="demo-pill">{remoteConnected ? '已连接' : '未连接'}</span>
               </div>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  setToast('连接流程尚未接入：没有发送网络请求，也没有保存账号。')
-                }}
-              >
-                <div className="form-grid">
-                  <label className="full-width">
-                    WebDAV 地址
-                    <input
-                      type="url"
-                      placeholder="https://dav.example.com/screenshots/"
-                      required
-                      autoComplete="off"
-                    />
-                  </label>
-                  <label>
-                    用户名
-                    <input placeholder="你的用户名" autoComplete="off" />
-                  </label>
-                  <label>
-                    密码 / 应用专用密码
-                    <input
-                      type="password"
-                      placeholder="请输入密码"
-                      autoComplete="new-password"
-                    />
-                  </label>
-                </div>
+              {!remoteState?.credentialStorageAvailable ? (
+                <p className="panel-note">
+                  当前系统无法安全加密保存密码，因此不提供连接；不会以明文保存凭据。
+                </p>
+              ) : (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void connectRemoteAction()
+                  }}
+                >
+                  <div className="form-grid">
+                    <label className="full-width">
+                      WebDAV 地址
+                      <input
+                        type="url"
+                        placeholder="https://dav.example.com/screenshots/"
+                        required
+                        autoComplete="off"
+                        value={connectForm.baseUrl}
+                        onChange={(event) =>
+                          setConnectForm({ ...connectForm, baseUrl: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      用户名
+                      <input
+                        autoComplete="off"
+                        value={connectForm.username}
+                        onChange={(event) =>
+                          setConnectForm({ ...connectForm, username: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      密码 / 应用专用密码
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={connectForm.password}
+                        onChange={(event) =>
+                          setConnectForm({ ...connectForm, password: event.target.value })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="form-footer">
+                    <span>密码只保存在本机系统加密存储，不写入数据库，也不进日志。</span>
+                    <button type="submit" disabled={connecting}>
+                      {connecting ? '连接中…' : '测试并连接'}
+                      <ArrowRightIcon size={17} />
+                    </button>
+                  </div>
+                </form>
+              )}
+              {capabilities ? (
+                <ul className="capability-list">
+                  {capabilities.map((item) => (
+                    <li key={item.name} className={item.ok ? 'ok' : 'fail'}>
+                      {item.ok ? <CheckIcon size={15} /> : <WarningCircleIcon size={15} />}
+                      <strong>{item.name}</strong>
+                      <span>{item.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {remoteConnected ? (
                 <div className="form-footer">
-                  <span>本阶段不保存凭据，也不发起连接。</span>
-                  <button type="submit">
-                    预览连接
-                    <ArrowRightIcon size={17} />
-                  </button>
+                  <span>图库 {remoteState?.libraryId}</span>
+                  <div className="actions">
+                    <button onClick={() => void disconnectRemoteAction()}>
+                      断开并删除本机凭据
+                    </button>
+                  </div>
                 </div>
-              </form>
+              ) : null}
             </section>
 
             <section className="settings-card">

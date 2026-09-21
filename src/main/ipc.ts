@@ -18,6 +18,10 @@ import type {
   ExportStatusDto,
   ExportSummaryDto,
   LibraryCopyStateDto,
+  RemoteConnectionDto,
+  RemoteStateDto,
+  UploadStatusDto,
+  UploadSummaryDto,
   DbHealth,
   DiscoveredRootDto,
   GalleryAssetDto,
@@ -53,12 +57,22 @@ import { getAppContext } from './app-context'
 import {
   parseArchiveStart,
   parseAssetId,
+  parseConnectRemote,
   parseExportStart,
   parseListAssets,
   parseListGames,
   parseRemoveSource,
-  parseScanStart
+  parseScanStart,
+  parseUploadStart
 } from './payloads'
+import {
+  cancelUpload,
+  connectRemote,
+  disconnectRemote,
+  getRemoteState,
+  getUploadStatus,
+  runUpload,
+} from './sync-job'
 import {
   cancelArchive,
   cancelExport,
@@ -362,4 +376,22 @@ export function registerIpcHandlers(): void {
   handle(IPC_CHANNELS.exportCancel, (): ExportStatusDto => cancelExport())
 
   handle(IPC_CHANNELS.exportStatus, (): ExportStatusDto => getExportStatus())
+
+  /* ---------------- 远端备份（WebDAV） ---------------- */
+
+  handle(IPC_CHANNELS.syncConnect, async (payload): Promise<RemoteConnectionDto> => {
+    return connectRemote(parseConnectRemote(payload))
+  })
+
+  handle(IPC_CHANNELS.syncDisconnect, (): RemoteStateDto => disconnectRemote())
+
+  handle(IPC_CHANNELS.syncState, (): RemoteStateDto => getRemoteState())
+
+  handle(IPC_CHANNELS.uploadStart, async (payload): Promise<UploadSummaryDto> => {
+    return runUpload(parseUploadStart(payload))
+  })
+
+  handle(IPC_CHANNELS.uploadCancel, (): UploadStatusDto => cancelUpload())
+
+  handle(IPC_CHANNELS.uploadStatus, (): UploadStatusDto => getUploadStatus())
 }

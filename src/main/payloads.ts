@@ -210,3 +210,48 @@ export function parseExportStart(value: unknown): {
     ...(assetIds === undefined ? {} : { assetIds })
   }
 }
+
+export function parseConnectRemote(value: unknown): {
+  baseUrl: string
+  username: string
+  password: string
+  libraryId?: string | null
+} {
+  const payload = asObject(value, '远端连接参数')
+
+  const baseUrl = payload['baseUrl']
+  if (typeof baseUrl !== 'string' || !/^https?:\/\//i.test(baseUrl.trim())) {
+    throw new AppError('IPC_INVALID_INPUT', '远端地址必须以 http 或 https 开头')
+  }
+  const username = payload['username']
+  if (typeof username !== 'string' || username.length > 200) {
+    throw new AppError('IPC_INVALID_INPUT', '用户名不合法')
+  }
+  const password = payload['password']
+  if (typeof password !== 'string' || password.length > 500) {
+    throw new AppError('IPC_INVALID_INPUT', '密码不合法')
+  }
+  const libraryId = payload['libraryId']
+  if (libraryId !== undefined && libraryId !== null && typeof libraryId !== 'string') {
+    throw new AppError('IPC_INVALID_INPUT', 'libraryId 不合法')
+  }
+
+  return {
+    baseUrl: baseUrl.trim().replace(/\/+$/, ''),
+    username,
+    password,
+    ...(typeof libraryId === 'string' && libraryId.length > 0 ? { libraryId } : {})
+  }
+}
+
+export function parseUploadStart(value: unknown): { forceRetry?: boolean } {
+  if (value === undefined || value === null) {
+    return {}
+  }
+  const payload = asObject(value, '备份参数')
+  const forceRetry = payload['forceRetry']
+  if (forceRetry !== undefined && typeof forceRetry !== 'boolean') {
+    throw new AppError('IPC_INVALID_INPUT', 'forceRetry 必须是布尔值')
+  }
+  return forceRetry === true ? { forceRetry: true } : {}
+}

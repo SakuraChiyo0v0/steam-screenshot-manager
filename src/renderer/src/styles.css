@@ -1399,3 +1399,47 @@ dialog::backdrop {
 .card-missing {
   padding-bottom: 4px;
 }
+
+/* ── 阶段 3：WebDAV 能力测试与远端操作 ── */
+
+.capability-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.capability-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: var(--raised);
+}
+
+.capability-list li.ok strong {
+  color: var(--text);
+}
+
+.capability-list li.fail {
+  color: #e0a0a0;
+}
+
+.capability-list li.fail strong {
+  color: #e0a0a0;
+}
+
+.capability-list li span {
+  margin-left: auto;
+  text-align: right;
+}
+
+.form-footer .actions,
+.task-toolbar .actions {
+  display: flex;
+  gap: 8px;
+}

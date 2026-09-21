@@ -24,6 +24,20 @@ export const ERROR_CODES = {
   SRC_VDF_PARSE: 'SRC_VDF_PARSE',
   /** 已有同类任务在执行 */
   JOB_RUNNING: 'JOB_RUNNING',
+  /** WebDAV 认证失败（401） */
+  DAV_AUTH: 'DAV_AUTH',
+  /** WebDAV 权限不足（403） */
+  DAV_FORBIDDEN: 'DAV_FORBIDDEN',
+  /** WebDAV 超时或断网 */
+  DAV_TIMEOUT: 'DAV_TIMEOUT',
+  /** WebDAV 触发限流（429） */
+  DAV_RATE_LIMIT: 'DAV_RATE_LIMIT',
+  /** 远端容量不足（507） */
+  DAV_CAPACITY: 'DAV_CAPACITY',
+  /** 返回登录页或非 WebDAV 响应 */
+  DAV_NOT_WEBDAV: 'DAV_NOT_WEBDAV',
+  /** 跨站重定向被拒绝 */
+  DAV_REDIRECT_REJECTED: 'DAV_REDIRECT_REJECTED',
   /** 主进程未预期的内部错误 */
   APP_INTERNAL: 'APP_INTERNAL'
 } as const
@@ -47,6 +61,13 @@ export const ERROR_META: Readonly<Record<ErrorCode, ErrorCodeMeta>> = {
   SRC_UNREADABLE: { message: '来源目录读取失败', retriable: true },
   SRC_VDF_PARSE: { message: 'VDF/ACF 文件解析失败', retriable: false },
   JOB_RUNNING: { message: '已有同类任务正在执行', retriable: true },
+  DAV_AUTH: { message: '远端认证失败，请检查账号或应用密码', retriable: false },
+  DAV_FORBIDDEN: { message: '远端权限不足', retriable: false },
+  DAV_TIMEOUT: { message: '远端连接超时或网络中断', retriable: true },
+  DAV_RATE_LIMIT: { message: '远端请求过于频繁', retriable: true },
+  DAV_CAPACITY: { message: '远端容量不足', retriable: true },
+  DAV_NOT_WEBDAV: { message: '该地址不是可用的 WebDAV 服务', retriable: false },
+  DAV_REDIRECT_REJECTED: { message: '跨站重定向已被拒绝', retriable: false },
   APP_INTERNAL: { message: '应用内部错误', retriable: false }
 }
 
@@ -81,12 +102,17 @@ export function err(code: ErrorCode, detail?: string): Err {
 /** 核心层抛出的领域错误，携带稳定错误码。 */
 export class AppError extends Error {
   readonly code: ErrorCode
+  /** 服务端要求的重试等待（如 429 的 Retry-After），毫秒 */
+  readonly retryAfterMs?: number
 
-  constructor(code: ErrorCode, detail?: string) {
+  constructor(code: ErrorCode, detail?: string, options?: { retryAfterMs?: number }) {
     const meta = ERROR_META[code]
     super(detail ? `${meta.message}：${detail}` : meta.message)
     this.name = 'AppError'
     this.code = code
+    if (options?.retryAfterMs !== undefined) {
+      this.retryAfterMs = options.retryAfterMs
+    }
   }
 }
 

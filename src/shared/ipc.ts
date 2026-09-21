@@ -14,6 +14,10 @@ import type {
   ExportStatusDto,
   ExportSummaryDto,
   LibraryCopyStateDto,
+  RemoteConnectionDto,
+  RemoteStateDto,
+  UploadStatusDto,
+  UploadSummaryDto,
   AppInfo,
   AssetSortType,
   DbHealth,
@@ -61,7 +65,14 @@ export const IPC_CHANNELS = {
   exportPickDir: 'export:pickDir',
   exportStart: 'export:start',
   exportCancel: 'export:cancel',
-  exportStatus: 'export:status'
+  exportStatus: 'export:status',
+  // 远端备份（WebDAV）
+  syncConnect: 'sync:connect',
+  syncDisconnect: 'sync:disconnect',
+  syncState: 'sync:state',
+  uploadStart: 'upload:start',
+  uploadCancel: 'upload:cancel',
+  uploadStatus: 'upload:status'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -70,7 +81,8 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
 export const IPC_EVENTS = {
   scanProgress: 'scan:progress',
   archiveProgress: 'archive:progress',
-  exportProgress: 'export:progress'
+  exportProgress: 'export:progress',
+  uploadProgress: 'upload:progress'
 } as const
 
 /** 暴露给渲染层的方法名白名单（invoke 型）。 */
@@ -100,7 +112,13 @@ export const EXPOSED_METHODS = [
   'pickExportDir',
   'startExport',
   'cancelExport',
-  'getExportStatus'
+  'getExportStatus',
+  'connectRemote',
+  'disconnectRemote',
+  'getRemoteState',
+  'startUpload',
+  'cancelUpload',
+  'getUploadStatus'
 ] as const
 
 export type ExposedMethod = (typeof EXPOSED_METHODS)[number]
@@ -112,7 +130,9 @@ export const EVENT_METHODS = [
   'onArchiveProgress',
   'offArchiveProgress',
   'onExportProgress',
-  'offExportProgress'
+  'offExportProgress',
+  'onUploadProgress',
+  'offUploadProgress'
 ] as const
 
 /** 方法名到通道的映射：preload 与主进程共用，避免两处清单漂移。 */
@@ -142,7 +162,13 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   pickExportDir: IPC_CHANNELS.exportPickDir,
   startExport: IPC_CHANNELS.exportStart,
   cancelExport: IPC_CHANNELS.exportCancel,
-  getExportStatus: IPC_CHANNELS.exportStatus
+  getExportStatus: IPC_CHANNELS.exportStatus,
+  connectRemote: IPC_CHANNELS.syncConnect,
+  disconnectRemote: IPC_CHANNELS.syncDisconnect,
+  getRemoteState: IPC_CHANNELS.syncState,
+  startUpload: IPC_CHANNELS.uploadStart,
+  cancelUpload: IPC_CHANNELS.uploadCancel,
+  getUploadStatus: IPC_CHANNELS.uploadStatus
 }
 
 export type IpcResult<T> = Ok<T> | Err
@@ -199,6 +225,18 @@ export interface ExportDirStateDto {
   readonly targetDir: string | null
 }
 
+export interface ConnectRemotePayload {
+  readonly baseUrl: string
+  readonly username: string
+  readonly password: string
+  readonly libraryId?: string | null
+}
+
+export interface UploadStartPayload {
+  /** 忽略退避窗口，立刻重试失败项 */
+  readonly forceRetry?: boolean
+}
+
 /** 渲染层可用的接口，由 preload 注入到 window.api。 */
 export interface RendererApi {
   getAppInfo(): Promise<IpcResult<AppInfo>>
@@ -234,6 +272,13 @@ export interface RendererApi {
   cancelExport(): Promise<IpcResult<ExportStatusDto>>
   getExportStatus(): Promise<IpcResult<ExportStatusDto>>
 
+  connectRemote(payload: ConnectRemotePayload): Promise<IpcResult<RemoteConnectionDto>>
+  disconnectRemote(): Promise<IpcResult<RemoteStateDto>>
+  getRemoteState(): Promise<IpcResult<RemoteStateDto>>
+  startUpload(payload?: UploadStartPayload): Promise<IpcResult<UploadSummaryDto>>
+  cancelUpload(): Promise<IpcResult<UploadStatusDto>>
+  getUploadStatus(): Promise<IpcResult<UploadStatusDto>>
+
   /** 订阅进度事件；同一时刻只保留一个监听器 */
   onScanProgress(listener: (progress: ScanProgressDto) => void): void
   offScanProgress(): void
@@ -241,4 +286,6 @@ export interface RendererApi {
   offArchiveProgress(): void
   onExportProgress(listener: (status: ExportStatusDto) => void): void
   offExportProgress(): void
+  onUploadProgress(listener: (status: UploadStatusDto) => void): void
+  offUploadProgress(): void
 }
