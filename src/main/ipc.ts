@@ -18,6 +18,7 @@ import type {
   ExportStatusDto,
   ExportSummaryDto,
   LibraryCopyStateDto,
+  PreviewStatsDto,
   RemoteCatalogDto,
   RemoteConnectionDto,
   RemoteStateDto,
@@ -57,6 +58,10 @@ import {
 import type { AssetSummary } from '@core/library/queries'
 import { assetUrl, thumbnailUrl } from './asset-protocol'
 import { getAppContext } from './app-context'
+import { applyLoginItem } from './index'
+import { rescheduleAutoCollect } from './auto-collect'
+import { previewStats } from '@core/library/previews'
+import { previewQueueStats } from './preview-queue'
 import {
   parseArchiveStart,
   parseAssetId,
@@ -208,12 +213,29 @@ export function registerIpcHandlers(): void {
         protectedRoots: resolveProtectedRoots(getAppContext().paths),
         sourceRoots: []
       })
+
       if (!check.ok) {
         throw new AppError('LIB_PATH_INVALID', check.reason)
       }
     }
 
-    return writeSettings(database.db, payload)
+    const next = writeSettings(database.db, payload)
+    // 设置变化后同步运行状态：开机自启与自动收集排期
+    if (payload.launchAtLogin !== undefined) {
+      applyLoginItem(next.launchAtLogin)
+    }
+    if (payload.autoCollect !== undefined || payload.autoCollectIntervalMinutes !== undefined) {
+      rescheduleAutoCollect()
+    }
+    return next
+  })
+
+  handle(IPC_CHANNELS.libraryPreviewStats, (): PreviewStatsDto => {
+    const { database } = getAppContext()
+    const settings = readSettings(database.db)
+    const stats = settings.libraryRoot ? previewStats(settings.libraryRoot) : { count: 0, bytes: 0 }
+    const queue = previewQueueStats()
+    return { count: stats.count, bytes: stats.bytes, pending: queue.pending, generated: queue.generated }
   })
 
   handle(IPC_CHANNELS.libraryPickRoot, async (): Promise<LibraryRootState> => {

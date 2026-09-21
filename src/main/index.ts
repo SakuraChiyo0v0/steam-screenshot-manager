@@ -14,12 +14,15 @@ import { join } from 'node:path'
 import { BrowserWindow, app, shell } from 'electron'
 import { readSettings } from '@core/settings/settings-store'
 import { registerAssetProtocol, registerAssetScheme } from './asset-protocol'
-import { disposeAppContext, initAppContext, type AppContext } from './app-context'
+import { disposeAppContext, getAppContext, initAppContext, type AppContext } from './app-context'
 import { registerIpcHandlers } from './ipc'
 import { readVerifyScanTarget, runVerifyScan } from './verify-scan'
 import { readVerifyArchiveTarget, runVerifyArchive } from './verify-archive'
 import { readVerifyUploadTarget, runVerifyUpload } from './verify-upload'
 import { readVerifyRestoreTarget, runVerifyRestore } from './verify-restore'
+import { readBuildPreviewsTarget, runBuildPreviews } from './build-previews'
+import { createTray, destroyTray, refreshTray } from './tray'
+import { rescheduleAutoCollect } from './auto-collect'
 import { reconcileNow } from './archive-job'
 
 const SELF_CHECK_FLAG = '--self-check'
@@ -47,6 +50,21 @@ function createWindow(): BrowserWindow {
   })
 
   window.on('ready-to-show', () => window.show())
+
+  // 关闭到托盘：不退出进程，任务继续跑；真正的退出走托盘菜单或系统退出。
+  window.on('close', (event) => {
+    if (quitting) {
+      return
+    }
+    const settings = readSettings(getAppContext().database.db)
+    if (!settings.closeToTray) {
+      return
+    }
+    event.preventDefault()
+    window.hide()
+    refreshTray()
+  })
+
   window.on('closed', () => {
     mainWindow = null
   })
@@ -65,6 +83,19 @@ function createWindow(): BrowserWindow {
   }
 
   return window
+}
+
+/** 是否正在真正退出（用于区分"关闭窗口"与"退出应用"）。 */
+let quitting = false
+let trayTimer: NodeJS.Timeout | null = null
+
+/** 开机自启跟随设置。 */
+export function applyLoginItem(enabled: boolean): void {
+  try {
+    app.setLoginItemSettings({ openAtLogin: enabled, args: [] })
+  } catch (error) {
+    console.warn('[启动项] 设置失败：', error instanceof Error ? error.message : String(error))
+  }
 }
 
 function focusExistingWindow(): void {
@@ -203,6 +234,7 @@ const isToolMode =
   readVerifyArchiveTarget(process.argv) !== null ||
   readVerifyUploadTarget(process.argv) !== null ||
   readVerifyRestoreTarget(process.argv) !== null ||
+  readBuildPreviewsTarget(process.argv) !== null ||
   process.argv.includes(SELF_CHECK_FLAG)
 
 // 工具模式（自检 / 扫描验证）不参与单实例锁：它们不创建窗口，
@@ -242,6 +274,13 @@ if (!hasSingleInstanceLock) {
     const verifyRestoreTarget = readVerifyRestoreTarget(process.argv)
     if (verifyRestoreTarget) {
       await runVerifyRestore(verifyRestoreTarget, process.argv)
+      return
+    }
+
+    // 批量生成预览缓存（工具模式，不创建窗口）
+    const buildPreviewsTarget = readBuildPreviewsTarget(process.argv)
+    if (buildPreviewsTarget) {
+      await runBuildPreviews(buildPreviewsTarget)
       return
     }
 
@@ -287,6 +326,18 @@ if (!hasSingleInstanceLock) {
     registerAssetProtocol()
     mainWindow = createWindow()
 
+    // 托盘：不打开窗口也能看到状态与触发收集
+    createTray(() => {
+      quitting = true
+    })
+    // 托盘状态每 10 秒刷新一次（任务状态是内存里的轻量读取）
+    trayTimer = setInterval(() => refreshTray(), 10_000)
+
+    // 开机自启跟随设置；自动收集按设置的间隔重新排期
+    const startupSettings = readSettings(getAppContext().database.db)
+    applyLoginItem(startupSettings.launchAtLogin)
+    rescheduleAutoCollect()
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         mainWindow = createWindow()
@@ -296,7 +347,16 @@ if (!hasSingleInstanceLock) {
     })
   })
 
-  app.on('window-all-closed', () => {
+  app.on('before-quit', () => {
+  quitting = true
+  if (trayTimer) {
+    clearInterval(trayTimer)
+    trayTimer = null
+  }
+  destroyTray()
+})
+
+app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
       app.quit()
     }
@@ -306,3 +366,4 @@ if (!hasSingleInstanceLock) {
     disposeAppContext()
   })
 }
+

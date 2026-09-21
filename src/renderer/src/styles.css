@@ -1443,3 +1443,54 @@ dialog::backdrop {
   display: flex;
   gap: 8px;
 }
+
+/* ── 阶段 5：设置项开关列表 ── */
+
+.toggle-list {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 4px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.toggle-row:last-child {
+  border-bottom: 0;
+}
+
+.toggle-row > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toggle-row strong {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.toggle-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.toggle-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.toggle-row .number-input {
+  margin-left: auto;
+  width: 84px;
+  text-align: center;
+}

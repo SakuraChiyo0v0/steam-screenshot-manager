@@ -47,7 +47,11 @@ describe('本机偏好存储', () => {
     writeSettings(db, { autoCollect: true, libraryRoot: 'C:\\LocalSpace\\gallery' })
     writeSettings(db, { autoCollect: false })
 
-    expect(readSettings(db)).toEqual({ autoCollect: false, libraryRoot: 'C:\\LocalSpace\\gallery' })
+    expect(readSettings(db)).toEqual({
+      ...DEFAULT_SETTINGS,
+      autoCollect: false,
+      libraryRoot: 'C:\\LocalSpace\\gallery'
+    })
 
     db.close()
   })

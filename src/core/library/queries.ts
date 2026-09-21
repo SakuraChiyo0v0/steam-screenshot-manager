@@ -36,6 +36,8 @@ export interface AssetSummary {
   readonly captureTimeSource: string
   readonly available: boolean
   readonly hasThumbnail: boolean
+  /** 内容指纹：预览缓存按它命名 */
+  readonly sha256: string
   /** 原文件名：来源存在时来自来源，图库副本存在时来自归档/恢复记录 */
   readonly originalFilename: string | null
   /** 是否已有受管的图库副本 */
@@ -200,6 +202,7 @@ const ASSET_SELECT = `
     (SELECT COALESCE(MAX(sf2.has_thumbnail), 0) FROM source_files sf2
       WHERE sf2.asset_id = a.asset_id AND sf2.present = 1) AS hasThumbnail,
     EXISTS (SELECT 1 FROM local_copies lc
+         JOIN assets a ON a.asset_id = lc.asset_id
              WHERE lc.asset_id = a.asset_id AND lc.present = 1) AS archived,
     EXISTS (SELECT 1 FROM remote_objects ro
              WHERE ro.asset_id = a.asset_id AND ro.publish_status = 'verified') AS remoteVerified
@@ -337,15 +340,19 @@ export interface AssetLocation {
   readonly rootPath: string
   readonly relativePath: string
   readonly hasThumbnail: boolean
+  /** 内容指纹：预览缓存按它命名 */
+  readonly sha256: string
 }
 
 export function findAssetLocation(db: SqliteDatabase, assetId: string): AssetLocation | null {
   // 1) 来源优先：来源目录还带着 Steam 的缩略图，网格渲染更省资源
   const sourceRow = db
     .prepare(
-      `SELECT s.root_path AS rootPath, sf.relative_path AS relativePath, sf.has_thumbnail AS hasThumbnail
+      `SELECT s.root_path AS rootPath, sf.relative_path AS relativePath, sf.has_thumbnail AS hasThumbnail,
+              a.sha256 AS sha256
          FROM source_files sf
          JOIN sources s ON s.source_id = sf.source_id
+         JOIN assets a ON a.asset_id = sf.asset_id
         WHERE sf.asset_id = ? AND sf.present = 1
         ORDER BY sf.last_seen_at DESC
         LIMIT 1`
@@ -356,15 +363,17 @@ export function findAssetLocation(db: SqliteDatabase, assetId: string): AssetLoc
     return {
       rootPath: String(sourceRow.rootPath),
       relativePath: String(sourceRow.relativePath),
-      hasThumbnail: Number(sourceRow.hasThumbnail ?? 0) === 1
+      hasThumbnail: Number(sourceRow.hasThumbnail ?? 0) === 1,
+      sha256: String(sourceRow.sha256)
     }
   }
 
   // 2) 回退到独立图库的受管副本：来源被移除、换电脑恢复后，图仍然要能看
   const copyRow = db
     .prepare(
-      `SELECT lc.library_root AS rootPath, lc.relative_path AS relativePath
+      `SELECT lc.library_root AS rootPath, lc.relative_path AS relativePath, a.sha256 AS sha256
          FROM local_copies lc
+         JOIN assets a ON a.asset_id = lc.asset_id
         WHERE lc.asset_id = ? AND lc.present = 1
         ORDER BY lc.verified_at DESC
         LIMIT 1`
@@ -377,7 +386,8 @@ export function findAssetLocation(db: SqliteDatabase, assetId: string): AssetLoc
   return {
     rootPath: String(copyRow.rootPath),
     relativePath: String(copyRow.relativePath),
-    hasThumbnail: false
+    hasThumbnail: false,
+    sha256: String(copyRow.sha256)
   }
 }
 

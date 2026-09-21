@@ -26,8 +26,16 @@ export interface LibraryRootState {
 
 /** 本机偏好。首版通过共享 SQLite 同步的设置一律不放这里。 */
 export interface Settings {
-  /** 自动收集新增截图；工程基础阶段 仅为占位项，默认关闭 */
+  /** 后台自动收集新增截图（扫描 + 归档） */
   readonly autoCollect: boolean
+  /** 自动收集间隔（分钟） */
+  readonly autoCollectIntervalMinutes: number
+  /** 自动收集后顺带上传到远端（需要已连接远端存储） */
+  readonly autoBackup: boolean
+  /** 关闭窗口时隐藏到托盘而不是退出 */
+  readonly closeToTray: boolean
+  /** 开机自动启动 */
+  readonly launchAtLogin: boolean
   /** 图库根目录；未选择时为 null */
   readonly libraryRoot: string | null
 }
@@ -53,6 +61,10 @@ export interface DbHealth {
 
 export const DEFAULT_SETTINGS: Settings = {
   autoCollect: false,
+  autoCollectIntervalMinutes: 60,
+  autoBackup: false,
+  closeToTray: true,
+  launchAtLogin: false,
   libraryRoot: null
 }
 
@@ -364,4 +376,11 @@ export interface RestoreSummaryDto {
   readonly abortedByAuth: boolean
   readonly durationMs: number
   readonly failures: readonly RestoreFailureDto[]
+}
+
+export interface PreviewStatsDto {
+  readonly count: number
+  readonly bytes: number
+  readonly pending: number
+  readonly generated: number
 }

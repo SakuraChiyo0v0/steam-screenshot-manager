@@ -30,6 +30,7 @@ import type {
   CapabilityItemDto,
   LibraryCopyStateDto,
   LibraryStatsDto,
+  PreviewStatsDto,
   RemoteStateDto,
   UploadStatusDto,
   RegisteredSourceDto,
@@ -123,6 +124,7 @@ export function App() {
   const [diagnostics, setDiagnostics] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [copyState, setCopyState] = useState<LibraryCopyStateDto | null>(null)
+  const [previewState, setPreviewState] = useState<PreviewStatsDto | null>(null)
   const [archiveStatus, setArchiveStatus] = useState<ArchiveStatusDto | null>(null)
 
   /**
@@ -281,6 +283,31 @@ export function App() {
   useEffect(() => {
     void refreshCopyState()
   }, [refreshCopyState])
+
+  const refreshPreviewState = useCallback(async () => {
+    if (!hasApi) return
+    try {
+      setPreviewState(await call((api) => api.getPreviewStats()))
+    } catch {
+      /* 预览统计读取失败不影响其它功能 */
+    }
+  }, [hasApi])
+
+  useEffect(() => {
+    void refreshPreviewState()
+    // 浏览过程中预览会在后台补齐，定期刷新统计
+    const timer = setInterval(() => void refreshPreviewState(), 20_000)
+    return () => clearInterval(timer)
+  }, [refreshPreviewState])
+
+  /** 更新本机设置；部分字段需要主进程同步调整运行状态（如开机自启）。 */
+  const patchSettings = async (patch: Partial<Settings>) => {
+    try {
+      setSettings(await call((api) => api.updateSettings(patch)))
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
+  }
 
   const refreshLibrary = useCallback(async () => {
     if (!hasApi) return
@@ -999,7 +1026,7 @@ export function App() {
                               </div>
                             ) : (
                               <img
-                                src={imageSrc(originalKey, shot.src)}
+                                src={imageSrc(originalKey, shot.thumbSrc)}
                                 alt={shot.title}
                                 loading="lazy"
                                 onError={() => markImageFailed(originalKey)}
@@ -1350,6 +1377,87 @@ export function App() {
                   </div>
                 </div>
               )}
+            </section>
+
+            <section className="settings-card">
+              <div className="section-heading">
+                <div>
+                  <h2>日常使用</h2>
+                  <p>让收集和备份自己跑起来，平时不用一直手动点。</p>
+                </div>
+                <GearSixIcon size={23} />
+              </div>
+              <div className="toggle-list">
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={settings?.autoCollect === true}
+                    onChange={(event) => void patchSettings({ autoCollect: event.target.checked })}
+                  />
+                  <span>
+                    <strong>后台自动收集</strong>
+                    <small>按间隔增量扫描来源并归档新增截图（归档是幂等的，不会重复复制）</small>
+                  </span>
+                </label>
+                <label className="toggle-row">
+                  <span>
+                    <strong>收集间隔</strong>
+                    <small>分钟；仅在开启自动收集时生效</small>
+                  </span>
+                  <input
+                    className="number-input"
+                    type="number"
+                    min={5}
+                    max={1440}
+                    value={settings?.autoCollectIntervalMinutes ?? 60}
+                    onChange={(event) =>
+                      void patchSettings({
+                        autoCollectIntervalMinutes: Math.max(5, Number(event.target.value) || 60)
+                      })
+                    }
+                  />
+                </label>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={settings?.autoBackup === true}
+                    onChange={(event) => void patchSettings({ autoBackup: event.target.checked })}
+                  />
+                  <span>
+                    <strong>收集后自动备份到远端</strong>
+                    <small>需要已连接远端存储；未连接时会跳过并记录</small>
+                  </span>
+                </label>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={settings?.closeToTray === true}
+                    onChange={(event) => void patchSettings({ closeToTray: event.target.checked })}
+                  />
+                  <span>
+                    <strong>关闭窗口时留在托盘</strong>
+                    <small>任务继续执行；从托盘菜单或退出应用才真正结束</small>
+                  </span>
+                </label>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={settings?.launchAtLogin === true}
+                    onChange={(event) => void patchSettings({ launchAtLogin: event.target.checked })}
+                  />
+                  <span>
+                    <strong>开机自动启动</strong>
+                    <small>登录后直接开始后台收集</small>
+                  </span>
+                </label>
+              </div>
+              <p className="panel-note">
+                预览缓存：{previewState ? `${previewState.count} 张 / ${formatBytes(previewState.bytes)}` : '读取中…'}
+                {previewState && previewState.pending > 0
+                  ? ` · 后台待生成 ${previewState.pending} 张`
+                  : ''}
+                （浏览时自动补齐，可随时删除重建）
+              </p>
             </section>
 
             <section className="about-row">

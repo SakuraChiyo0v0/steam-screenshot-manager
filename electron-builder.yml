@@ -24,11 +24,17 @@ files:
   - out/**/*
   - package.json
 
+# 托盘图标不进 asar：运行时用 process.resourcesPath 读取
+extraResources:
+  - from: resources/tray.png
+    to: tray.png
+
 asar: true
 
 electronDist: node_modules/electron/dist
 
 win:
+  icon: resources/icon.png
   target:
     - nsis
     - portable

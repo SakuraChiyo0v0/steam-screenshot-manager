@@ -18,6 +18,7 @@ import type {
   RemoteStateDto,
   UploadStatusDto,
   RemoteCatalogDto,
+  PreviewStatsDto,
   RestoreStatusDto,
   RestoreSummaryDto,
   UploadSummaryDto,
@@ -42,6 +43,7 @@ export const IPC_CHANNELS = {
   appGetInfo: 'app:getInfo',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  libraryPreviewStats: 'library:previewStats',
   libraryPickRoot: 'library:pickRoot',
   dbHealth: 'db:health',
   // 来源
@@ -99,6 +101,7 @@ export const EXPOSED_METHODS = [
   'getAppInfo',
   'getSettings',
   'updateSettings',
+  'getPreviewStats',
   'pickLibraryRoot',
   'runDbHealth',
   'discoverSources',
@@ -155,6 +158,7 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   getAppInfo: IPC_CHANNELS.appGetInfo,
   getSettings: IPC_CHANNELS.settingsGet,
   updateSettings: IPC_CHANNELS.settingsUpdate,
+  getPreviewStats: IPC_CHANNELS.libraryPreviewStats,
   pickLibraryRoot: IPC_CHANNELS.libraryPickRoot,
   runDbHealth: IPC_CHANNELS.dbHealth,
   discoverSources: IPC_CHANNELS.sourcesDiscover,
@@ -266,6 +270,7 @@ export interface RendererApi {
   getAppInfo(): Promise<IpcResult<AppInfo>>
   getSettings(): Promise<IpcResult<Settings>>
   updateSettings(patch: Partial<Settings>): Promise<IpcResult<Settings>>
+  getPreviewStats(): Promise<IpcResult<PreviewStatsDto>>
   pickLibraryRoot(): Promise<IpcResult<LibraryRootState>>
   runDbHealth(): Promise<IpcResult<DbHealth>>
 

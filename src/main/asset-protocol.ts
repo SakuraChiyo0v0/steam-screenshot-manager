@@ -5,12 +5,16 @@
  * （词法检查 + realpath 检查），越界一律拒绝（docs/architecture.md §7、§8）。
  */
 
+import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { net, protocol } from 'electron'
 import { AppError } from '@shared/errors'
 import { resolveExistingAssetPath, thumbnailPathFor } from '@core/library/asset-paths'
 import { findAssetLocation } from '@core/library/queries'
+import { previewAbsolutePath } from '@core/library/previews'
+import { readSettings } from '@core/settings/settings-store'
 import { getAppContext } from './app-context'
+import { requestPreview } from './preview-queue'
 
 export const ASSET_SCHEME = 'ssm-asset'
 const ASSET_HOST = 'asset'
@@ -68,19 +72,51 @@ export function registerAssetProtocol(): void {
         return new Response(null, { status: 404 })
       }
 
-      if (wantsThumbnail && location.hasThumbnail) {
-        try {
-          const thumbnailPath = await resolveExistingAssetPath(
-            location.rootPath,
-            thumbnailPathFor(location.relativePath)
-          )
-          return await fileResponse(thumbnailPath)
-        } catch {
-          // 缩略图不可用时回退原图
+      const settings = readSettings(database.db)
+
+      const originalPath = await resolveExistingAssetPath(location.rootPath, location.relativePath)
+
+      if (wantsThumbnail) {
+        // 1) 自建预览：尺寸与体积都优于 Steam 缩略图，且恢复出来的图库也有
+        if (settings.libraryRoot) {
+          const previewPath = previewAbsolutePath(settings.libraryRoot, location.sha256)
+          if (existsSync(previewPath)) {
+            return await fileResponse(previewPath)
+          }
+        }
+
+        // 2) 来源自带的缩略图：先给用户看得见的东西，同时排队补预览
+        if (location.hasThumbnail) {
+          try {
+            const thumbnailPath = await resolveExistingAssetPath(
+              location.rootPath,
+              thumbnailPathFor(location.relativePath)
+            )
+            if (settings.libraryRoot) {
+              requestPreview({
+                libraryRoot: settings.libraryRoot,
+                sha256: location.sha256,
+                sourceRoot: location.rootPath,
+                relativePath: location.relativePath
+              })
+            }
+            return await fileResponse(thumbnailPath)
+          } catch {
+            // 缩略图不可用时继续往下回退
+          }
+        }
+
+        // 3) 都没有：先用原图撑住，后台补预览
+        if (settings.libraryRoot) {
+          requestPreview({
+            libraryRoot: settings.libraryRoot,
+            sha256: location.sha256,
+            sourceRoot: location.rootPath,
+            relativePath: location.relativePath
+          })
         }
       }
 
-      const originalPath = await resolveExistingAssetPath(location.rootPath, location.relativePath)
       return await fileResponse(originalPath)
     } catch (error) {
       if (error instanceof AppError) {
