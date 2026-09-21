@@ -12,6 +12,8 @@ export const ERROR_CODES = {
   LIB_PATH_INVALID: 'LIB_PATH_INVALID',
   /** 目标磁盘空间不足 */
   LIB_DISK_FULL: 'LIB_DISK_FULL',
+  /** 本地发布后核对哈希不一致 */
+  LIB_HASH_MISMATCH: 'LIB_HASH_MISMATCH',
   /** 数据库损坏或迁移失败 */
   LIB_DB_CORRUPT: 'LIB_DB_CORRUPT',
   /** 来源根目录不存在或不可读 */
@@ -39,6 +41,7 @@ export const ERROR_META: Readonly<Record<ErrorCode, ErrorCodeMeta>> = {
   IPC_INVALID_INPUT: { message: '请求参数不合法', retriable: false },
   LIB_PATH_INVALID: { message: '路径不合法或与来源重叠', retriable: false },
   LIB_DISK_FULL: { message: '目标磁盘空间不足', retriable: true },
+  LIB_HASH_MISMATCH: { message: '文件内容与索引指纹不一致', retriable: false },
   LIB_DB_CORRUPT: { message: '数据库损坏或迁移失败', retriable: false },
   SRC_NOT_FOUND: { message: '来源目录不存在或不可读', retriable: true },
   SRC_UNREADABLE: { message: '来源目录读取失败', retriable: true },

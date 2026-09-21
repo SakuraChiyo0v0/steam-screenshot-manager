@@ -34,6 +34,7 @@ export interface ViewerItem {
   readonly filename: string
   readonly gameName: string
   readonly available: boolean
+  readonly archived: boolean
   readonly width: number | null
   readonly height: number | null
   readonly bytes: number
@@ -101,6 +102,7 @@ export function toViewerItem(asset: GalleryAssetDto): ViewerItem {
     filename: asset.fileName,
     gameName: asset.gameName,
     available: asset.available,
+    archived: asset.archived,
     width: asset.width,
     height: asset.height,
     bytes: asset.bytes,

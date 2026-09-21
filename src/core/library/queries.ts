@@ -36,6 +36,8 @@ export interface AssetSummary {
   readonly captureTimeSource: string
   readonly available: boolean
   readonly hasThumbnail: boolean
+  /** 是否已有受管的图库副本 */
+  readonly archived: boolean
 }
 
 export interface AssetDetail extends AssetSummary {
@@ -189,7 +191,9 @@ const ASSET_SELECT = `
       WHERE sf.asset_id = a.asset_id AND sf.present = 1
       ORDER BY sf.relative_path LIMIT 1)              AS relativePath,
     (SELECT COALESCE(MAX(sf2.has_thumbnail), 0) FROM source_files sf2
-      WHERE sf2.asset_id = a.asset_id AND sf2.present = 1) AS hasThumbnail
+      WHERE sf2.asset_id = a.asset_id AND sf2.present = 1) AS hasThumbnail,
+    EXISTS (SELECT 1 FROM local_copies lc
+             WHERE lc.asset_id = a.asset_id AND lc.present = 1) AS archived
   FROM assets a
   JOIN games g ON g.game_key = a.game_key
 `
@@ -209,6 +213,7 @@ function mapAssetRow(row: Record<string, unknown>): AssetDetail {
     captureTimeSource: String(row.captureTimeSource),
     available: relativePath.length > 0,
     hasThumbnail: Number(row.hasThumbnail ?? 0) === 1,
+    archived: Number(row.archived ?? 0) === 1,
     ext: String(row.ext),
     sha256: String(row.sha256),
     kind: String(row.kind),

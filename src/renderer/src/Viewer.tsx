@@ -16,6 +16,7 @@ import {
   withRetryToken,
   withoutFailedImage
 } from '@shared/gallery-view'
+import { call } from './api'
 import { Modal } from './Modal'
 import type { ViewerItem } from './view-model'
 
@@ -39,6 +40,7 @@ export function Viewer({
   const [details, setDetails] = useState(false)
   const [actualSize, setActualSize] = useState(false)
   const [notice, setNotice] = useState('')
+  const [exporting, setExporting] = useState(false)
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set())
   const [attempts, setAttempts] = useState<Record<string, number>>({})
   const activeThumb = useRef<HTMLButtonElement>(null)
@@ -92,6 +94,33 @@ export function Viewer({
     setFailed((current) => withFailedImage(current, key))
   }
 
+  /** 真实导出：选择目录后导出这一张，导出后会校验写入文件的指纹。 */
+  const exportCurrent = async () => {
+    setExporting(true)
+    setNotice('')
+    try {
+      const dir = await call((api) => api.pickExportDir())
+      if (!dir.targetDir) {
+        setNotice('已取消选择导出目录。')
+        return
+      }
+      const summary = await call((api) =>
+        api.startExport({ targetDir: dir.targetDir!, layout: 'game-year', assetIds: [shot.id] })
+      )
+      if (summary.written > 0) {
+        setNotice(`已导出 1 张到 ${summary.targetDir}`)
+      } else if (summary.skipped > 0) {
+        setNotice('目标目录已有相同文件，未重复写入。')
+      } else {
+        setNotice(summary.failed > 0 ? '导出失败，详见同步中心的任务说明。' : '没有可导出的内容。')
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const retry = (key: string) => {
     setFailed((current) => withoutFailedImage(current, key))
     setAttempts((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
@@ -126,15 +155,9 @@ export function Viewer({
             >
               <InfoIcon size={22} />
             </button>
-            <button
-              onClick={() =>
-                setNotice(
-                  unavailable ? '原图不可用，无法导出。' : '导出功能待接入，当前未保存文件。'
-                )
-              }
-            >
+            <button disabled={exporting || (unavailable && !shot.archived)} onClick={() => void exportCurrent()}>
               <DownloadSimpleIcon size={18} />
-              <span>导出</span>
+              <span>{exporting ? '导出中…' : '导出'}</span>
             </button>
           </div>
         </header>
@@ -208,6 +231,8 @@ export function Viewer({
                       : '缺失'
                     : '存在'}
                 </dd>
+                <dt>图库副本</dt>
+                <dd>{shot.archived ? '已归档到本机图库' : '尚未归档'}</dd>
                 <dt>备份状态</dt>
                 <dd>未接入远端存储</dd>
               </dl>

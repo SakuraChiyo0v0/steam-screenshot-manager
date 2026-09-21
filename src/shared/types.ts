@@ -169,6 +169,8 @@ export interface GalleryAssetDto {
   readonly captureTimeSource: CaptureTimeSourceType
   /** 来源文件当前是否存在；false 时界面必须显示缺失状态 */
   readonly available: boolean
+  /** 是否已有受管的图库副本 */
+  readonly archived: boolean
   readonly imageUrl: string
   readonly thumbnailUrl: string
 }
@@ -184,4 +186,67 @@ export interface LibraryStatsDto {
   readonly bytes: number
   readonly accounts: number
   readonly missingFiles: number
+}
+
+/* ------------------------------------------------------------------ *
+ * 归档（本地收集）与导出
+ * ------------------------------------------------------------------ */
+
+export type ExportLayoutType = 'game' | 'game-year' | 'game-appid' | 'flat'
+
+export interface ArchiveStatusDto {
+  readonly running: boolean
+  readonly phase: 'planning' | 'copying' | null
+  readonly processed: number
+  readonly total: number | null
+  readonly currentFile: string | null
+  readonly copied: number
+  readonly skipped: number
+  readonly failed: number
+  readonly startedAt: string | null
+  readonly finishedAt: string | null
+  readonly errorCode: string | null
+  readonly errorMessage: string | null
+}
+
+export interface ArchiveSummaryDto {
+  readonly total: number
+  readonly copied: number
+  readonly skipped: number
+  readonly failed: number
+  readonly cancelled: boolean
+  readonly durationMs: number
+  readonly libraryRoot: string
+}
+
+export interface ExportStatusDto {
+  readonly running: boolean
+  readonly processed: number
+  readonly total: number | null
+  readonly currentFile: string | null
+  readonly written: number
+  readonly skipped: number
+  readonly failed: number
+  readonly startedAt: string | null
+  readonly finishedAt: string | null
+  readonly errorCode: string | null
+  readonly errorMessage: string | null
+}
+
+export interface ExportSummaryDto {
+  readonly total: number
+  readonly written: number
+  readonly skipped: number
+  readonly failed: number
+  readonly conflictsRenamed: number
+  readonly cancelled: boolean
+  readonly durationMs: number
+  readonly targetDir: string
+}
+
+export interface LibraryCopyStateDto {
+  readonly libraryRoot: string | null
+  readonly archived: number
+  readonly missing: number
+  readonly assets: number
 }

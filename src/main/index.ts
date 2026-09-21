@@ -17,6 +17,8 @@ import { registerAssetProtocol, registerAssetScheme } from './asset-protocol'
 import { disposeAppContext, initAppContext, type AppContext } from './app-context'
 import { registerIpcHandlers } from './ipc'
 import { readVerifyScanTarget, runVerifyScan } from './verify-scan'
+import { readVerifyArchiveTarget, runVerifyArchive } from './verify-archive'
+import { reconcileNow } from './archive-job'
 
 const SELF_CHECK_FLAG = '--self-check'
 const SELF_CHECK_TIMEOUT_MS = 30_000
@@ -195,7 +197,9 @@ async function runSelfCheck(): Promise<void> {
 
 // 单实例：拿不到锁说明已有实例在运行，本次启动直接退出。
 const isToolMode =
-  readVerifyScanTarget(process.argv) !== null || process.argv.includes(SELF_CHECK_FLAG)
+  readVerifyScanTarget(process.argv) !== null ||
+  readVerifyArchiveTarget(process.argv) !== null ||
+  process.argv.includes(SELF_CHECK_FLAG)
 
 // 工具模式（自检 / 扫描验证）不参与单实例锁：它们不创建窗口，
 // 也不应因为界面实例正在运行而无法执行。
@@ -213,6 +217,13 @@ if (!hasSingleInstanceLock) {
     const verifyTarget = readVerifyScanTarget(process.argv)
     if (verifyTarget) {
       await runVerifyScan(verifyTarget)
+      return
+    }
+
+    // 真机归档验证入口（工具模式，不创建窗口）
+    const verifyArchiveTarget = readVerifyArchiveTarget(process.argv)
+    if (verifyArchiveTarget) {
+      await runVerifyArchive(verifyArchiveTarget, process.argv)
       return
     }
 
@@ -241,6 +252,18 @@ if (!hasSingleInstanceLock) {
         '打包运行=' + String(app.isPackaged)
       ].join('　')
     )
+
+    // 启动对账：受管副本缺失则标记，清理 staging 残留；失败不影响启动
+    try {
+      const reconciled = reconcileNow()
+      if (reconciled.missing > 0 || reconciled.stagingCleaned > 0) {
+        console.log(
+          `[对账] 受管副本缺失 ${reconciled.missing}，清理 staging ${reconciled.stagingCleaned}`
+        )
+      }
+    } catch (error) {
+      console.warn('[对账] 跳过：', error instanceof Error ? error.message : String(error))
+    }
 
     registerIpcHandlers()
     registerAssetProtocol()

@@ -9,8 +9,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { EXPOSED_METHODS, IPC_EVENTS, METHOD_TO_CHANNEL } from '@shared/ipc'
 
-type ProgressListener = (progress: unknown) => void
-
 const api: Record<string, (payload?: unknown) => Promise<unknown>> = {}
 
 for (const method of EXPOSED_METHODS) {
@@ -18,29 +16,45 @@ for (const method of EXPOSED_METHODS) {
   api[method] = (payload?: unknown) => ipcRenderer.invoke(channel, payload)
 }
 
-// 扫描进度是主进程推送的事件，单独桥接；同一时刻只保留一个监听器，避免重复订阅。
-let progressListener: ((event: unknown, payload: unknown) => void) | null = null
+// 主进程推送的进度事件，单独桥接；同一时刻每类只保留一个监听器，避免重复订阅。
+type IpcListener = (event: unknown, payload: unknown) => void
 
-api['onScanProgress'] = (listener?: unknown) => {
-  if (typeof listener !== 'function') {
+const eventListeners: Record<string, IpcListener | null> = {}
+
+function bridgeEvent(name: string, channel: string): void {
+  api[name] = (listener?: unknown) => {
+    if (typeof listener !== 'function') {
+      return Promise.resolve()
+    }
+    const existing = eventListeners[channel]
+    if (existing) {
+      ipcRenderer.removeListener(channel, existing)
+      eventListeners[channel] = null
+    }
+    const typed = listener as (payload: unknown) => void
+    const wrapped: IpcListener = (_event, payload) => typed(payload)
+    eventListeners[channel] = wrapped
+    ipcRenderer.addListener(channel, wrapped)
     return Promise.resolve()
   }
-  if (progressListener) {
-    ipcRenderer.removeListener(IPC_EVENTS.scanProgress, progressListener)
-    progressListener = null
-  }
-  const typed = listener as ProgressListener
-  progressListener = (_event: unknown, payload: unknown) => typed(payload)
-  ipcRenderer.addListener(IPC_EVENTS.scanProgress, progressListener)
-  return Promise.resolve()
 }
 
-api['offScanProgress'] = () => {
-  if (progressListener) {
-    ipcRenderer.removeListener(IPC_EVENTS.scanProgress, progressListener)
-    progressListener = null
+function unbridgeEvent(name: string, channel: string): void {
+  api[name] = () => {
+    const existing = eventListeners[channel]
+    if (existing) {
+      ipcRenderer.removeListener(channel, existing)
+      eventListeners[channel] = null
+    }
+    return Promise.resolve()
   }
-  return Promise.resolve()
 }
+
+bridgeEvent('onScanProgress', IPC_EVENTS.scanProgress)
+unbridgeEvent('offScanProgress', IPC_EVENTS.scanProgress)
+bridgeEvent('onArchiveProgress', IPC_EVENTS.archiveProgress)
+unbridgeEvent('offArchiveProgress', IPC_EVENTS.archiveProgress)
+bridgeEvent('onExportProgress', IPC_EVENTS.exportProgress)
+unbridgeEvent('offExportProgress', IPC_EVENTS.exportProgress)
 
 contextBridge.exposeInMainWorld('api', api)

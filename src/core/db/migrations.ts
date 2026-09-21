@@ -121,6 +121,30 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec('CREATE INDEX IF NOT EXISTS idx_source_files_asset ON source_files (asset_id)')
       db.exec('CREATE INDEX IF NOT EXISTS idx_source_files_source ON source_files (source_id, present)')
     }
+  },
+  {
+    version: 3,
+    description: '建立图库副本表 local_copies',
+    up(db) {
+      // 受管副本：一个资产在某个图库根下最多一份原件。
+      // relative_path 相对图库根，绝不保存来源绝对路径。
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS local_copies (
+          local_copy_id TEXT PRIMARY KEY,
+          asset_id      TEXT NOT NULL,
+          library_root  TEXT NOT NULL,
+          relative_path TEXT NOT NULL,
+          bytes         INTEGER NOT NULL,
+          sha256        TEXT NOT NULL,
+          verified_at   TEXT NOT NULL,
+          present       INTEGER NOT NULL DEFAULT 1,
+          created_at    TEXT NOT NULL,
+          UNIQUE (asset_id, library_root)
+        )
+      `)
+      db.exec('CREATE INDEX IF NOT EXISTS idx_local_copies_asset ON local_copies (asset_id, present)')
+      db.exec('CREATE INDEX IF NOT EXISTS idx_local_copies_root ON local_copies (library_root, present)')
+    }
   }
 ]
 

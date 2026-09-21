@@ -27,9 +27,11 @@ import {
 } from '@phosphor-icons/react'
 import type {
   AccountSummaryDto,
+  ArchiveStatusDto,
   DiscoveredRootDto,
   GalleryAssetDto,
   GalleryGameDto,
+  LibraryCopyStateDto,
   LibraryStatsDto,
   RegisteredSourceDto,
   ScanProgressDto,
@@ -119,6 +121,8 @@ export function App() {
   const [syncFilter, setSyncFilter] = useState('全部任务')
   const [diagnostics, setDiagnostics] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
+  const [copyState, setCopyState] = useState<LibraryCopyStateDto | null>(null)
+  const [archiveStatus, setArchiveStatus] = useState<ArchiveStatusDto | null>(null)
 
   /**
    * 请求序号：每次刷新或追加都自增，只有序号仍是最新的响应才允许写入状态。
@@ -234,6 +238,27 @@ export function App() {
     })
     return () => api.offScanProgress()
   }, [])
+
+  /** 归档进度事件订阅。 */
+  useEffect(() => {
+    const api = getApi()
+    if (!api) return
+    api.onArchiveProgress((status: ArchiveStatusDto) => setArchiveStatus(status))
+    return () => api.offArchiveProgress()
+  }, [])
+
+  const refreshCopyState = useCallback(async () => {
+    if (!hasApi) return
+    try {
+      setCopyState(await call((api) => api.getLibraryCopyState()))
+    } catch {
+      /* 图库状态读取失败不影响其它功能 */
+    }
+  }, [hasApi])
+
+  useEffect(() => {
+    void refreshCopyState()
+  }, [refreshCopyState])
 
   const refreshLibrary = useCallback(async () => {
     if (!hasApi) return
@@ -452,6 +477,42 @@ export function App() {
     }
   }
 
+  const startArchive = async () => {
+    setToast('归档已开始，可以继续浏览界面。')
+    try {
+      const summary = await call((api) => api.startArchive({}))
+      setToast(
+        `归档完成：计划 ${summary.total}，新复制 ${summary.copied}，已存在 ${summary.skipped}，失败 ${summary.failed}，耗时 ${(summary.durationMs / 1000).toFixed(1)} 秒${summary.cancelled ? '（已取消）' : ''}。`
+      )
+      await refreshCopyState()
+      await refreshLibrary()
+    } catch (error) {
+      setToast(errorMessage(error))
+      await refreshCopyState()
+    }
+  }
+
+  const cancelArchive = async () => {
+    try {
+      setArchiveStatus(await call((api) => api.cancelArchive()))
+      setToast('已请求取消归档，当前文件处理完后停止。')
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
+  }
+
+  const reconcileLibrary = async () => {
+    try {
+      const result = await call((api) => api.reconcileLibrary())
+      setToast(
+        `对账完成：检查 ${result.checked}，副本缺失 ${result.missing}，清理临时文件 ${result.stagingCleaned}。`
+      )
+      await refreshCopyState()
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
+  }
+
   const pickLibraryRoot = async () => {
     try {
       const state = await call((api) => api.pickLibraryRoot())
@@ -464,6 +525,7 @@ export function App() {
 
   const selectedScanSource = sources.find((source) => source.sourceId === scanSourceId) ?? null
   const scanRunning = scanStatus?.running === true
+  const archiveRunning = archiveStatus?.running === true
   const scanProgressLabel = scanStatus
     ? scanStatus.total === null
       ? `正在统计文件（已发现 ${scanStatus.processed}）`
@@ -1108,7 +1170,7 @@ export function App() {
               <div className="section-heading">
                 <div>
                   <h2>本地图库</h2>
-                  <p>归档功能尚未接入；当前只建立索引，不复制来源文件。</p>
+                  <p>把来源截图复制进独立图库；来源只读，不会被修改或移动。</p>
                 </div>
                 <HardDrivesIcon size={23} />
               </div>
@@ -1117,6 +1179,45 @@ export function App() {
                 <span>{settings?.libraryRoot ?? '尚未选择图库目录'}</span>
                 <button onClick={() => void pickLibraryRoot()}>选择目录</button>
               </div>
+              {copyState ? (
+                <p className="panel-note">
+                  已归档 {copyState.archived} / {copyState.assets} 张
+                  {copyState.missing > 0 ? ` · ${copyState.missing} 个副本当前缺失` : ''}
+                  {copyState.assets > 0 && copyState.archived === copyState.assets
+                    ? ' · 全部已归档'
+                    : ''}
+                </p>
+              ) : null}
+              {archiveRunning ? (
+                <div className="error-banner inline" role="status">
+                  <ArrowsClockwiseIcon size={20} />
+                  <div>
+                    <strong>正在归档</strong>
+                    <p>
+                      {archiveStatus?.total === null
+                        ? `正在统计（已处理 ${archiveStatus?.processed ?? 0}）`
+                        : `${archiveStatus?.processed ?? 0} / ${archiveStatus?.total ?? 0}`}
+                      {archiveStatus?.currentFile ? ` · ${archiveStatus.currentFile}` : ''}
+                      {archiveStatus?.failed ? ` · 失败 ${archiveStatus.failed}` : ''}
+                    </p>
+                  </div>
+                  <button onClick={() => void cancelArchive()}>取消</button>
+                </div>
+              ) : (
+                <div className="form-footer">
+                  <span>归档只新增副本；重复执行不会重复复制。</span>
+                  <div className="actions">
+                    <button onClick={() => void reconcileLibrary()}>对账</button>
+                    <button
+                      className="primary"
+                      disabled={!settings?.libraryRoot}
+                      onClick={() => void startArchive()}
+                    >
+                      开始归档
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="about-row">

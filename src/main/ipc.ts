@@ -13,6 +13,11 @@ import { IPC_CHANNELS } from '@shared/ipc'
 import type {
   AccountSummaryDto,
   AppInfo,
+  ArchiveStatusDto,
+  ArchiveSummaryDto,
+  ExportStatusDto,
+  ExportSummaryDto,
+  LibraryCopyStateDto,
   DbHealth,
   DiscoveredRootDto,
   GalleryAssetDto,
@@ -46,12 +51,24 @@ import type { AssetSummary } from '@core/library/queries'
 import { assetUrl, thumbnailUrl } from './asset-protocol'
 import { getAppContext } from './app-context'
 import {
+  parseArchiveStart,
   parseAssetId,
+  parseExportStart,
   parseListAssets,
   parseListGames,
   parseRemoveSource,
   parseScanStart
 } from './payloads'
+import {
+  cancelArchive,
+  cancelExport,
+  getArchiveStatus,
+  getExportStatus,
+  getLibraryCopyState,
+  reconcileNow,
+  runArchive,
+  runExport
+} from './archive-job'
 import { resolveProtectedRoots } from './paths'
 import { cancelScan, getScanStatus, startScan } from './scan-job'
 
@@ -126,6 +143,7 @@ function toGalleryAsset(detail: AssetSummary): GalleryAssetDto {
     capturedAt: detail.capturedAt,
     captureTimeSource: detail.captureTimeSource as GalleryAssetDto['captureTimeSource'],
     available: detail.available,
+    archived: detail.archived,
     imageUrl: assetUrl(detail.assetId),
     thumbnailUrl: thumbnailUrl(detail.assetId)
   }
@@ -309,4 +327,39 @@ export function registerIpcHandlers(): void {
     }
     return toGalleryAsset(detail)
   })
+
+  /* ---------------- 归档（本地收集） ---------------- */
+
+  handle(IPC_CHANNELS.archiveStart, async (payload): Promise<ArchiveSummaryDto> => {
+    return runArchive(parseArchiveStart(payload))
+  })
+
+  handle(IPC_CHANNELS.archiveCancel, (): ArchiveStatusDto => cancelArchive())
+
+  handle(IPC_CHANNELS.archiveStatus, (): ArchiveStatusDto => getArchiveStatus())
+
+  handle(IPC_CHANNELS.archiveReconcile, () => reconcileNow())
+
+  handle(IPC_CHANNELS.libraryCopyState, (): LibraryCopyStateDto => getLibraryCopyState())
+
+  /* ---------------- 导出 ---------------- */
+
+  handle(IPC_CHANNELS.exportPickDir, async () => {
+    const picked = await dialog.showOpenDialog({
+      title: '选择导出目录',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return {
+      targetDir: picked.canceled || picked.filePaths.length === 0 ? null : picked.filePaths[0]
+    }
+  })
+
+  handle(IPC_CHANNELS.exportStart, async (payload): Promise<ExportSummaryDto> => {
+    const parsed = parseExportStart(payload)
+    return runExport(parsed)
+  })
+
+  handle(IPC_CHANNELS.exportCancel, (): ExportStatusDto => cancelExport())
+
+  handle(IPC_CHANNELS.exportStatus, (): ExportStatusDto => getExportStatus())
 }
