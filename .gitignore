@@ -33,3 +33,9 @@ tmp-library/
 # 本地凭据（WebDAV 密码等绝不入库）
 credentials/
 secrets/
+
+# 开发与验收证据：含真实账号信息、本机路径与大量截图，不发布到远端
+docs/evidence/
+docs/reviews/
+docs/implementation-reports/
+docs/design/
