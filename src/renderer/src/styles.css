@@ -744,7 +744,8 @@ dialog {
 }
 dialog::backdrop {
   background: #080e10ad;
-  backdrop-filter: blur(5px);
+  /* 去掉毛玻璃：它要求把整页栅格化再模糊，实测查看器阶段多占约 200 MB 显存 */
+  /* 保留压暗，视觉上几乎一致 */
 }
 .collect-dialog {
   width: 520px;
@@ -1493,4 +1494,17 @@ dialog::backdrop {
   margin-left: auto;
   width: 84px;
   text-align: center;
+}
+
+/* ── 内存优化：离屏卡片跳过渲染与绘制 ── */
+
+.game-card,
+.shot-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
+.filmstrip-spacer {
+  /* 与 .filmstrip button 的 flex-basis 保持一致，保证滚动宽度不变 */
+  flex: 0 0 122px;
 }

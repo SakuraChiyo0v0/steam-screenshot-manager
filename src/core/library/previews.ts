@@ -15,20 +15,32 @@ import { dirname, join } from 'node:path'
 import { nativeImage } from 'electron'
 import type { SqliteDatabase } from '../db/sqlite'
 
-/** 卡片最宽约 400px，按 2 倍屏留余量。 */
+/** 相册卡片最宽约 400px，按 2 倍屏留余量。 */
 export const PREVIEW_MAX_WIDTH = 800
-const PREVIEW_QUALITY = 78
+/** 查看器底部缩略图带只有约 86px 高，用更小的尺寸避免几十张 800px 纹理常驻。 */
+export const MINI_MAX_WIDTH = 200
 
-export function previewRelativePath(sha256: string): string {
-  return `cache/previews/${sha256}.jpg`
+export type PreviewSize = 'preview' | 'mini'
+
+const SIZES: Record<PreviewSize, { dir: string; maxWidth: number; quality: number }> = {
+  preview: { dir: 'previews', maxWidth: PREVIEW_MAX_WIDTH, quality: 78 },
+  mini: { dir: 'minis', maxWidth: MINI_MAX_WIDTH, quality: 76 }
 }
 
-export function previewAbsolutePath(libraryRoot: string, sha256: string): string {
-  return join(libraryRoot, 'cache', 'previews', `${sha256}.jpg`)
+export function previewAbsolutePath(
+  libraryRoot: string,
+  sha256: string,
+  size: PreviewSize = 'preview'
+): string {
+  return join(libraryRoot, 'cache', SIZES[size].dir, `${sha256}.jpg`)
 }
 
-export function hasPreview(libraryRoot: string, sha256: string): boolean {
-  return existsSync(previewAbsolutePath(libraryRoot, sha256))
+export function hasPreview(
+  libraryRoot: string,
+  sha256: string,
+  size: PreviewSize = 'preview'
+): boolean {
+  return existsSync(previewAbsolutePath(libraryRoot, sha256, size))
 }
 
 export interface GeneratePreviewResult {
@@ -46,11 +58,14 @@ export function generatePreview(input: {
   libraryRoot: string
   sha256: string
   sourcePath: string
+  size?: PreviewSize
 }): GeneratePreviewResult | null {
-  const target = previewAbsolutePath(input.libraryRoot, input.sha256)
+  const size: PreviewSize = input.size ?? 'preview'
+  const spec = SIZES[size]
+  const target = previewAbsolutePath(input.libraryRoot, input.sha256, size)
   if (existsSync(target)) {
     const info = statSync(target)
-    return { created: false, bytes: info.size, width: PREVIEW_MAX_WIDTH, height: 0 }
+    return { created: false, bytes: info.size, width: spec.maxWidth, height: 0 }
   }
 
   let image
@@ -63,10 +78,12 @@ export function generatePreview(input: {
     return null
   }
 
-  const size = image.getSize()
+  const imageSize = image.getSize()
   const resized =
-    size.width > PREVIEW_MAX_WIDTH ? image.resize({ width: PREVIEW_MAX_WIDTH, quality: 'good' }) : image
-  const jpeg = resized.toJPEG(PREVIEW_QUALITY)
+    imageSize.width > spec.maxWidth
+      ? image.resize({ width: spec.maxWidth, quality: 'good' })
+      : image
+  const jpeg = resized.toJPEG(spec.quality)
   if (jpeg.length === 0) {
     return null
   }
@@ -93,8 +110,8 @@ export interface PreviewStats {
 }
 
 /** 预览缓存现状，供设置页显示。 */
-export function previewStats(libraryRoot: string): PreviewStats {
-  const dir = join(libraryRoot, 'cache', 'previews')
+export function previewStats(libraryRoot: string, size: PreviewSize = 'preview'): PreviewStats {
+  const dir = join(libraryRoot, 'cache', SIZES[size].dir)
   if (!existsSync(dir)) {
     return { count: 0, bytes: 0 }
   }
@@ -122,7 +139,11 @@ export interface PreviewCandidate {
 }
 
 /** 列出还缺预览的资产（来源或图库副本均可作为解码源）。 */
-export function planPreviews(db: SqliteDatabase, libraryRoot: string): PreviewCandidate[] {
+export function planPreviews(
+  db: SqliteDatabase,
+  libraryRoot: string,
+  size: PreviewSize = 'preview'
+): PreviewCandidate[] {
   const rows = db
     .prepare(
       `SELECT a.asset_id AS assetId, a.sha256 AS sha256,
@@ -144,5 +165,5 @@ export function planPreviews(db: SqliteDatabase, libraryRoot: string): PreviewCa
       sourceRoot: String(row.sourceRoot),
       relativePath: String(row.relativePath)
     }))
-    .filter((candidate) => !hasPreview(libraryRoot, candidate.sha256))
+    .filter((candidate) => !hasPreview(libraryRoot, candidate.sha256, size))
 }

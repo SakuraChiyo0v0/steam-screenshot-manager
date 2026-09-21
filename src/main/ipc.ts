@@ -56,7 +56,7 @@ import {
   listGames,
 } from '@core/library/queries'
 import type { AssetSummary } from '@core/library/queries'
-import { assetUrl, thumbnailUrl } from './asset-protocol'
+import { assetUrl, miniUrl, thumbnailUrl } from './asset-protocol'
 import { getAppContext } from './app-context'
 import { applyLoginItem } from './index'
 import { rescheduleAutoCollect } from './auto-collect'
@@ -154,7 +154,8 @@ function toGalleryGame(row: {
     assetCount: row.assetCount,
     bytes: row.bytes,
     latestCapturedAt: row.latestCapturedAt,
-    coverUrl: row.coverAssetId ? assetUrl(row.coverAssetId) : null,
+    // 封面卡片只有约 350px 宽，走缩略图通道即可，避免为每张封面解码 4K 原图
+    coverUrl: row.coverAssetId ? thumbnailUrl(row.coverAssetId) : null,
     accounts: row.accounts
   }
 }
@@ -176,7 +177,8 @@ function toGalleryAsset(detail: AssetSummary): GalleryAssetDto {
     originalFilename: detail.originalFilename,
     remoteVerified: detail.remoteVerified,
     imageUrl: assetUrl(detail.assetId),
-    thumbnailUrl: thumbnailUrl(detail.assetId)
+    thumbnailUrl: thumbnailUrl(detail.assetId),
+    miniUrl: miniUrl(detail.assetId)
   }
 }
 

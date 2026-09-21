@@ -6,7 +6,7 @@
  * 同时把缺预览的资产放进队列，按固定间隔在后台慢慢补，补好之后下次请求就用预览。
  */
 
-import { generatePreview, hasPreview } from '@core/library/previews'
+import { generatePreview, hasPreview, type PreviewSize } from '@core/library/previews'
 import { resolveExistingAssetPath } from '@core/library/asset-paths'
 
 /** 每张之间留出的间隔：25 张/秒，既能较快补齐又不至于让主进程长时间占用。 */
@@ -19,6 +19,7 @@ interface QueueItem {
   readonly sha256: string
   readonly sourceRoot: string
   readonly relativePath: string
+  readonly size?: PreviewSize
 }
 
 class PreviewQueue {
@@ -28,8 +29,9 @@ class PreviewQueue {
   private failed = 0
 
   enqueue(item: QueueItem): void {
-    const key = `${item.libraryRoot}|${item.sha256}`
-    if (this.pending.has(key) || hasPreview(item.libraryRoot, item.sha256)) {
+    const size = item.size ?? 'preview'
+    const key = `${item.libraryRoot}|${item.sha256}|${size}`
+    if (this.pending.has(key) || hasPreview(item.libraryRoot, item.sha256, size)) {
       return
     }
     if (this.pending.size >= MAX_QUEUE) {
@@ -57,7 +59,8 @@ class PreviewQueue {
           const result = generatePreview({
             libraryRoot: item.libraryRoot,
             sha256: item.sha256,
-            sourcePath
+            sourcePath,
+            size: item.size ?? 'preview'
           })
           if (result) {
             this.generated += 1

@@ -280,7 +280,7 @@ if (!hasSingleInstanceLock) {
     // 批量生成预览缓存（工具模式，不创建窗口）
     const buildPreviewsTarget = readBuildPreviewsTarget(process.argv)
     if (buildPreviewsTarget) {
-      await runBuildPreviews(buildPreviewsTarget)
+      await runBuildPreviews(buildPreviewsTarget, process.argv.includes('--mini'))
       return
     }
 

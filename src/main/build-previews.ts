@@ -23,7 +23,7 @@ export function readBuildPreviewsTarget(argv: readonly string[]): string | null 
   return value.length > 0 ? value : null
 }
 
-export async function runBuildPreviews(target: string): Promise<void> {
+export async function runBuildPreviews(target: string, mini = false): Promise<void> {
   try {
     const context = await initAppContext()
     const libraryRoot = resolve(target)
@@ -32,7 +32,8 @@ export async function runBuildPreviews(target: string): Promise<void> {
     }
     mkdirSync(join(libraryRoot, 'cache', 'previews'), { recursive: true })
 
-    const candidates = planPreviews(context.database.db, libraryRoot)
+    const size = mini ? ('mini' as const) : ('preview' as const)
+    const candidates = planPreviews(context.database.db, libraryRoot, size)
     process.stdout.write(`[预览] 待生成 ${candidates.length} 张\n`)
 
     let created = 0
@@ -47,7 +48,8 @@ export async function runBuildPreviews(target: string): Promise<void> {
         const result = generatePreview({
           libraryRoot,
           sha256: candidate.sha256,
-          sourcePath
+          sourcePath,
+          size
         })
         if (result) {
           if (result.created) {
@@ -69,7 +71,7 @@ export async function runBuildPreviews(target: string): Promise<void> {
     }
 
     const durationMs = Date.now() - startedAt
-    const stats = previewStats(libraryRoot)
+    const stats = previewStats(libraryRoot, size)
     const report = {
       mode: 'build-previews',
       libraryRoot,

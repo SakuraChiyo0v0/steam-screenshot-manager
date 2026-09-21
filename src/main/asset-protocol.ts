@@ -11,7 +11,7 @@ import { net, protocol } from 'electron'
 import { AppError } from '@shared/errors'
 import { resolveExistingAssetPath, thumbnailPathFor } from '@core/library/asset-paths'
 import { findAssetLocation } from '@core/library/queries'
-import { previewAbsolutePath } from '@core/library/previews'
+import { previewAbsolutePath, type PreviewSize } from '@core/library/previews'
 import { readSettings } from '@core/settings/settings-store'
 import { getAppContext } from './app-context'
 import { requestPreview } from './preview-queue'
@@ -19,10 +19,16 @@ import { requestPreview } from './preview-queue'
 export const ASSET_SCHEME = 'ssm-asset'
 const ASSET_HOST = 'asset'
 const THUMBNAIL_HOST = 'thumb'
+/** 查看器底部缩略图带专用的小尺寸通道 */
+const MINI_HOST = 'mini'
 const ASSET_ID_PATTERN = /^[0-9a-fA-F-]{36}$/
 
 export function assetUrl(assetId: string): string {
   return `${ASSET_SCHEME}://${ASSET_HOST}/${assetId}`
+}
+
+export function miniUrl(assetId: string): string {
+  return `${ASSET_SCHEME}://${MINI_HOST}/${assetId}`
 }
 
 export function thumbnailUrl(assetId: string): string {
@@ -56,8 +62,9 @@ export function registerAssetProtocol(): void {
   protocol.handle(ASSET_SCHEME, async (request) => {
     try {
       const url = new URL(request.url)
-      const wantsThumbnail = url.hostname === THUMBNAIL_HOST
-      if (url.hostname !== ASSET_HOST && url.hostname !== THUMBNAIL_HOST) {
+      const wantsMini = url.hostname === MINI_HOST
+      const wantsThumbnail = url.hostname === THUMBNAIL_HOST || wantsMini
+      if (url.hostname !== ASSET_HOST && url.hostname !== THUMBNAIL_HOST && !wantsMini) {
         return new Response(null, { status: 404 })
       }
 
@@ -77,9 +84,10 @@ export function registerAssetProtocol(): void {
       const originalPath = await resolveExistingAssetPath(location.rootPath, location.relativePath)
 
       if (wantsThumbnail) {
+        const size: PreviewSize = wantsMini ? 'mini' : 'preview'
         // 1) 自建预览：尺寸与体积都优于 Steam 缩略图，且恢复出来的图库也有
         if (settings.libraryRoot) {
-          const previewPath = previewAbsolutePath(settings.libraryRoot, location.sha256)
+          const previewPath = previewAbsolutePath(settings.libraryRoot, location.sha256, size)
           if (existsSync(previewPath)) {
             return await fileResponse(previewPath)
           }
@@ -97,7 +105,8 @@ export function registerAssetProtocol(): void {
                 libraryRoot: settings.libraryRoot,
                 sha256: location.sha256,
                 sourceRoot: location.rootPath,
-                relativePath: location.relativePath
+                relativePath: location.relativePath,
+                size
               })
             }
             return await fileResponse(thumbnailPath)
@@ -112,7 +121,8 @@ export function registerAssetProtocol(): void {
             libraryRoot: settings.libraryRoot,
             sha256: location.sha256,
             sourceRoot: location.rootPath,
-            relativePath: location.relativePath
+            relativePath: location.relativePath,
+            size
           })
         }
       }

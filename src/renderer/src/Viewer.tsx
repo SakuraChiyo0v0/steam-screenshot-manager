@@ -27,6 +27,9 @@ import type { ViewerItem } from './view-model'
  * 缩略图损坏只影响底部缩略图带（回退到原图，再不行才显示警告图标），
  * 绝不据此关闭已经正常显示的主图。失败集合按 key 记录，切图不会沿用上一张的错误。
  */
+/** 缩略图带只渲染当前项附近这么多张：几千张时逐个渲染会占用大量 DOM 与图片内存。 */
+const FILMSTRIP_WINDOW = 30
+
 export function Viewer({
   items,
   initialIndex,
@@ -252,12 +255,17 @@ export function Viewer({
           </div>
           <div className="filmstrip">
             {items.map((item, i) => {
+              // 窗口外只留占位，保证滚动宽度与居中定位不变
+              if (Math.abs(i - index) > FILMSTRIP_WINDOW) {
+                return <span className="filmstrip-spacer" key={item.id} aria-hidden="true" />
+              }
               const thumbKey = IMAGE_FAILURE_KEYS.thumbnail(item.id)
               const itemOriginalKey = IMAGE_FAILURE_KEYS.original(item.id)
               const thumbFailed = failed.has(thumbKey)
               const itemOriginalFailed = failed.has(itemOriginalKey)
               // 缩略图坏了先回退原图；只有缩略图与原图都不可用时才显示警告图标
-              const source = thumbFailed ? (itemOriginalFailed ? null : item.src) : item.thumbSrc
+              // 缩略图带用的是 200px 迷你图，避免几十张 800px 纹理常驻显存
+              const source = thumbFailed ? (itemOriginalFailed ? null : item.src) : item.miniSrc
               const sourceKey = thumbFailed ? itemOriginalKey : thumbKey
               return (
                 <button

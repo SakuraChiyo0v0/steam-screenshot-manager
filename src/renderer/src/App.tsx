@@ -1029,6 +1029,7 @@ export function App() {
                                 src={imageSrc(originalKey, shot.thumbSrc)}
                                 alt={shot.title}
                                 loading="lazy"
+                                decoding="async"
                                 onError={() => markImageFailed(originalKey)}
                               />
                             )}

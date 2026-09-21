@@ -29,6 +29,7 @@ export interface ViewerItem {
   readonly title: string
   readonly src: string
   readonly thumbSrc: string
+  readonly miniSrc: string
   readonly date: string
   readonly dateSource: string
   readonly filename: string
@@ -98,6 +99,7 @@ export function toViewerItem(asset: GalleryAssetDto): ViewerItem {
     title: asset.fileName,
     src: asset.imageUrl,
     thumbSrc: asset.thumbnailUrl,
+    miniSrc: asset.miniUrl,
     date: formatCapturedAt(asset.capturedAt),
     dateSource: CAPTURE_SOURCE_LABELS[asset.captureTimeSource] ?? '未知',
     filename: asset.originalFilename ?? asset.fileName,

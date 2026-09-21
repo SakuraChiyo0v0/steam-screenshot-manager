@@ -189,6 +189,8 @@ export interface GalleryAssetDto {
   readonly remoteVerified: boolean
   readonly imageUrl: string
   readonly thumbnailUrl: string
+  /** 查看器底部缩略图带用的更小尺寸地址 */
+  readonly miniUrl: string
 }
 
 export interface GalleryPageDto {
