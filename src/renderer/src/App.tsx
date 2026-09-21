@@ -15,6 +15,7 @@ import {
   CheckIcon,
   HardDrivesIcon,
   DesktopIcon,
+  CaretDownIcon,
   CaretRightIcon,
   WarningCircleIcon,
   ArrowsClockwiseIcon,
@@ -96,6 +97,31 @@ export function App() {
   const [accountFilter, setAccountFilter] = useState<string | null>(null)
   const [installedFilter, setInstalledFilter] = useState<InstalledFilter>('all')
   const [sort, setSort] = useState('recent')
+  /** 排序弹层：原生 select 的弹层由系统绘制，深色主题下是白底白字，改用 DOM 弹层统一跟随主题。 */
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const sortMenuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!sortMenuOpen) {
+      return
+    }
+    const onPointerDown = (event: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setSortMenuOpen(false)
+      }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSortMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [sortMenuOpen])
 
   const [accounts, setAccounts] = useState<AccountSummaryDto[]>([])
   const [stats, setStats] = useState<LibraryStatsDto | null>(null)
@@ -486,6 +512,21 @@ export function App() {
     const cards = games.map(toGameCard)
     return sort === 'name' ? [...cards].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')) : cards
   }, [games, sort])
+
+  /** 游戏库按名称排，相册按拍摄时间排。 */
+  const sortOptions = useMemo(
+    () =>
+      page === 'library' && !gameId
+        ? [
+            { value: 'recent', label: '最近拍摄' },
+            { value: 'name', label: '游戏名称' }
+          ]
+        : [
+            { value: 'recent', label: '最近拍摄' },
+            { value: 'oldest', label: '最早拍摄' }
+          ],
+    [page, gameId]
+  )
 
   const viewerItems = useMemo(() => assets.map(toViewerItem), [assets])
   const selectedGame = games.find((game) => game.gameKey === gameId) ?? null
@@ -978,21 +1019,40 @@ export function App() {
                     ? '游戏相册'
                     : '所有游戏的截图'}
               </span>
-              <label className="sort-label">
-                排序
-                <select
+              <div className="sort-label" ref={sortMenuRef}>
+                <span>排序</span>
+                <button
+                  type="button"
+                  className={`sort-trigger${sortMenuOpen ? ' open' : ''}`}
+                  aria-haspopup="listbox"
+                  aria-expanded={sortMenuOpen}
                   aria-label="排序"
-                  value={sort}
-                  onChange={(event) => setSort(event.target.value)}
+                  onClick={() => setSortMenuOpen((open) => !open)}
                 >
-                  <option value="recent">最近拍摄</option>
-                  {page === 'library' && !gameId ? (
-                    <option value="name">游戏名称</option>
-                  ) : (
-                    <option value="oldest">最早拍摄</option>
-                  )}
-                </select>
-              </label>
+                  <span>{sortOptions.find((option) => option.value === sort)?.label}</span>
+                  <CaretDownIcon size={13} />
+                </button>
+                {sortMenuOpen ? (
+                  <div className="sort-menu" role="listbox" aria-label="排序">
+                    {sortOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={sort === option.value}
+                        className={`sort-menu-item${sort === option.value ? ' active' : ''}`}
+                        onClick={() => {
+                          setSort(option.value)
+                          setSortMenuOpen(false)
+                        }}
+                      >
+                        <span>{option.label}</span>
+                        {sort === option.value ? <CheckIcon size={14} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             {errorBanner}
