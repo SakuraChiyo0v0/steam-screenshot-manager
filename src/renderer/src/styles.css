@@ -1508,3 +1508,11 @@ dialog::backdrop {
   /* 与 .filmstrip button 的 flex-basis 保持一致，保证滚动宽度不变 */
   flex: 0 0 122px;
 }
+/* 相册滚动到底的自动加载提示（不再是需要手点的按钮） */
+.load-more-sentinel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 18px 0 26px;
+  min-height: 1px;
+}

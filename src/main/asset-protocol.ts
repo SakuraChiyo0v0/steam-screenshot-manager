@@ -12,6 +12,7 @@ import { AppError } from '@shared/errors'
 import { resolveExistingAssetPath, thumbnailPathFor } from '@core/library/asset-paths'
 import { findAssetLocation } from '@core/library/queries'
 import { previewAbsolutePath, type PreviewSize } from '@core/library/previews'
+import { chooseImageSource } from '@shared/image-source'
 import { readSettings } from '@core/settings/settings-store'
 import { getAppContext } from './app-context'
 import { notePreviewRequest, requestPreview } from './preview-queue'
@@ -93,35 +94,18 @@ export function registerAssetProtocol(): void {
           }
         }
 
-        // 2) 来源自带的缩略图：先给用户看得见的东西，同时排队补预览
-        // 来源缩略图只有约 200px，在卡片尺寸下会发虚，但**先给用户看得见的东西**：
-        // 预览生成完成后会通过 preview:ready 事件自动换成清晰的预览。
-        // （若这里直接返回 4K 原图，一屏 200 张会触发解码风暴，反而把协议响应拖住。）
         // 记录"用户正在浏览"，队列据此决定让出多少时间
         notePreviewRequest()
-        if (location.hasThumbnail) {
-          try {
-            const thumbnailPath = await resolveExistingAssetPath(
-              location.rootPath,
-              thumbnailPathFor(location.relativePath)
-            )
-            if (settings.libraryRoot) {
-              requestPreview({
-                assetId,
-                libraryRoot: settings.libraryRoot,
-                sha256: location.sha256,
-                sourceRoot: location.rootPath,
-                relativePath: location.relativePath,
-                size
-              })
-            }
-            return await fileResponse(thumbnailPath)
-          } catch {
-            // 缩略图不可用时继续往下回退
-          }
-        }
 
-        // 3) 都没有：先用原图撑住，后台补预览
+        // 2) 按用户偏好决定回退：优先原图（清晰）或先给来源缩略图（省资源）
+        const source = chooseImageSource({
+          wantsMini,
+          hasPreview: false,
+          hasSourceThumbnail: location.hasThumbnail,
+          preferOriginalImages: settings.preferOriginalImages
+        })
+
+        // 无论走哪条回退，都排队补预览，下次请求即可用上
         if (settings.libraryRoot) {
           requestPreview({
             assetId,
@@ -131,6 +115,18 @@ export function registerAssetProtocol(): void {
             relativePath: location.relativePath,
             size
           })
+        }
+
+        if (source === 'source-thumbnail') {
+          try {
+            const thumbnailPath = await resolveExistingAssetPath(
+              location.rootPath,
+              thumbnailPathFor(location.relativePath)
+            )
+            return await fileResponse(thumbnailPath)
+          } catch {
+            // 缩略图不可用时回退原图
+          }
         }
       }
 

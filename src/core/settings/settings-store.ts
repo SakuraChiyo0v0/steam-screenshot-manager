@@ -12,10 +12,17 @@ const KEY_AUTO_COLLECT = 'auto_collect'
 const KEY_AUTO_COLLECT_INTERVAL = 'auto_collect_interval_minutes'
 const KEY_AUTO_BACKUP = 'auto_backup'
 const KEY_CLOSE_TO_TRAY = 'close_to_tray'
+const KEY_PREFER_ORIGINAL_IMAGES = 'prefer_original_images'
 const KEY_LAUNCH_AT_LOGIN = 'launch_at_login'
 const KEY_LIBRARY_ROOT = 'library_root'
 
-const BOOLEAN_KEYS = ['autoCollect', 'autoBackup', 'closeToTray', 'launchAtLogin'] as const
+const BOOLEAN_KEYS = [
+  'autoCollect',
+  'autoBackup',
+  'closeToTray',
+  'preferOriginalImages',
+  'launchAtLogin'
+] as const
 const NUMBER_KEYS = ['autoCollectIntervalMinutes'] as const
 
 /** 运行时校验渲染层传来的 patch：只接受已知字段与正确类型。 */
@@ -79,6 +86,10 @@ export function readSettings(db: SqliteDatabase): Settings {
         : DEFAULT_SETTINGS.autoCollectIntervalMinutes,
     autoBackup: readBoolean(KEY_AUTO_BACKUP, DEFAULT_SETTINGS.autoBackup),
     closeToTray: readBoolean(KEY_CLOSE_TO_TRAY, DEFAULT_SETTINGS.closeToTray),
+    preferOriginalImages: readBoolean(
+      KEY_PREFER_ORIGINAL_IMAGES,
+      DEFAULT_SETTINGS.preferOriginalImages
+    ),
     launchAtLogin: readBoolean(KEY_LAUNCH_AT_LOGIN, DEFAULT_SETTINGS.launchAtLogin),
     libraryRoot: libraryRootValue && libraryRootValue.length > 0 ? libraryRootValue : null
   }
@@ -101,6 +112,9 @@ export function writeSettings(db: SqliteDatabase, patch: Partial<Settings>): Set
     }
     if (patch.closeToTray !== undefined) {
       upsert.run(KEY_CLOSE_TO_TRAY, patch.closeToTray ? '1' : '0')
+    }
+    if (patch.preferOriginalImages !== undefined) {
+      upsert.run(KEY_PREFER_ORIGINAL_IMAGES, patch.preferOriginalImages ? '1' : '0')
     }
     if (patch.launchAtLogin !== undefined) {
       upsert.run(KEY_LAUNCH_AT_LOGIN, patch.launchAtLogin ? '1' : '0')

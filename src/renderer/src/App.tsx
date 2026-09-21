@@ -425,6 +425,41 @@ export function App() {
     assetSort
   ])
 
+  /**
+   * 滚动到底自动加载下一页。
+   *
+   * 用滚动监听而不是 IntersectionObserver：后台/最小化时 Chromium 会限制（甚至不派发）
+   * IntersectionObserver 回调，而滚动监听仍然可靠。捕获阶段监听可以同时收到内层滚动容器的滚动。
+   * loadMore 自身有并发保护，重复调用是安全的。
+   */
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null)
+  const loadMoreRef = useRef(loadMore)
+  useEffect(() => {
+    loadMoreRef.current = loadMore
+  }, [loadMore])
+  useEffect(() => {
+    if (!nextCursor) {
+      return
+    }
+    const check = () => {
+      const node = loadMoreSentinelRef.current
+      if (!node) {
+        return
+      }
+      const rect = node.getBoundingClientRect()
+      if (rect.top - window.innerHeight < 600) {
+        void loadMoreRef.current()
+      }
+    }
+    check()
+    window.addEventListener('scroll', check, { capture: true, passive: true })
+    window.addEventListener('resize', check)
+    return () => {
+      window.removeEventListener('scroll', check, { capture: true })
+      window.removeEventListener('resize', check)
+    }
+  }, [nextCursor])
+
   const navigate = (next: Page) => {
     setPage(next)
     setGameId(null)
@@ -1091,13 +1126,18 @@ export function App() {
                   </div>
                 ) : null}
                 {nextCursor ? (
-                  <div className="result-toolbar">
-                    <span className="muted">已加载 {viewerItems.length} 张，还有更多</span>
-                    <button disabled={loadingMore} onClick={() => void loadMore()}>
-                      {loadingMore ? '加载中…' : '加载更多'}
-                    </button>
+                  <div className="load-more-sentinel" ref={loadMoreSentinelRef}>
+                    <span className="muted small">
+                      {loadingMore
+                        ? '正在加载更多…'
+                        : `已加载 ${viewerItems.length} 张，继续向下滚动会自动加载`}
+                    </span>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="load-more-sentinel">
+                    <span className="muted small">已全部加载 {viewerItems.length} 张</span>
+                  </div>
+                )}
               </>
             ) : (
               emptyBlock
@@ -1406,6 +1446,21 @@ export function App() {
                 <GearSixIcon size={23} />
               </div>
               <div className="toggle-list">
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={settings?.preferOriginalImages !== false}
+                    onChange={(event) =>
+                      void patchSettings({ preferOriginalImages: event.target.checked })
+                    }
+                  />
+                  <span>
+                    <strong>图片优先原图</strong>
+                    <small>
+                      直接显示高清原图，不用来源自带的约 200px 缩略图；占用更高但不会发虚。关闭后先给缩略图省资源。
+                    </small>
+                  </span>
+                </label>
                 <label className="toggle-row">
                   <input
                     type="checkbox"

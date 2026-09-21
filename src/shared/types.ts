@@ -34,6 +34,11 @@ export interface Settings {
   readonly autoBackup: boolean
   /** 关闭窗口时隐藏到托盘而不是退出 */
   readonly closeToTray: boolean
+  /**
+   * 图片优先原图：宁可占用高一点也直接给高清原图，不用来源自带的约 200px 缩略图。
+   * 关闭后先给来源缩略图（省内存与解码），适合图库很大、以流畅为先的场景。
+   */
+  readonly preferOriginalImages: boolean
   /** 开机自动启动 */
   readonly launchAtLogin: boolean
   /** 图库根目录；未选择时为 null */
@@ -64,6 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoCollectIntervalMinutes: 60,
   autoBackup: false,
   closeToTray: true,
+  preferOriginalImages: true,
   launchAtLogin: false,
   libraryRoot: null
 }
