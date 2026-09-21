@@ -37,6 +37,7 @@ import type {
   Settings
 } from '@shared/types'
 import {
+  IMAGE_FAILURE_KEYS,
   isAssetUnavailable,
   mergeAssetPages,
   resolveLibraryViewState,
@@ -124,7 +125,7 @@ export function App() {
    * 这样切换筛选/搜索后到达的旧响应会被丢弃，不会把上一个查询的结果混进来。
    */
   const requestToken = useRef(0)
-  /** 图片加载失败集合与重试次数（按 assetId 记录）。 */
+  /** 图片加载失败集合与重试次数，按 IMAGE_FAILURE_KEYS 的键记录（原图与缩略图分开）。 */
   const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(new Set())
   const [imageAttempts, setImageAttempts] = useState<Record<string, number>>({})
   /** 是否已经成功建立过索引（用于区分"尚未扫描的空库"与"筛选无匹配"）。 */
@@ -289,10 +290,7 @@ export function App() {
   /**
    * 追加下一页。
    *
-   * 三处保护（对应验收问题 1）：
-   *  1) loadingMore 阻止并发重复请求，按钮同时禁用；
-   *  2) 请求序号丢弃已过期的分页响应（用户期间改了筛选/搜索）；
-   *  3) 追加时按 assetId 去重，即使同一页被返回两次也不会重复。
+   * 三处保护：loadingMore 阻止并发、请求序号丢弃过期响应、按 assetId 去重。
    */
   const loadMore = useCallback(async () => {
     if (!nextCursor || !hasApi || loadingMore) return
@@ -777,60 +775,59 @@ export function App() {
             {listVisible && page === 'library' && !gameId ? (
               <div className="game-grid">
                 {visibleGames.map((game) => {
-                  const coverKey = `${game.key}:cover`
+                  const coverKey = IMAGE_FAILURE_KEYS.cover(game.key)
                   const coverFailed = failedImages.has(coverKey)
                   const coverUnavailable = !game.coverUrl || coverFailed
                   return (
-                    <button
-                      className="game-card"
-                      key={game.key}
-                      onClick={() => {
-                        setGameId(game.key)
-                        setSearch('')
-                        setSort('recent')
-                      }}
-                    >
-                      <div className="card-image">
-                        {coverUnavailable ? (
-                          <div className="card-missing">
-                            <ImagesIcon size={20} weight="light" />
-                            <span>{coverFailed ? '封面加载失败' : '暂无可用截图'}</span>
-                            {coverFailed && game.coverUrl ? (
-                              <button
-                                className="text-button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  retryImage(coverKey)
-                                }}
-                              >
-                                重试
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <img
-                            src={imageSrc(coverKey, game.coverUrl!)}
-                            alt={`${game.name} 最近一张截图`}
-                            onError={() => markImageFailed(coverKey)}
-                          />
-                        )}
-                        <span className="image-count">
-                          <ImagesIcon size={14} />
-                          {game.assetCount} 张
-                        </span>
-                        <span className="card-open">
-                          <ArrowRightIcon size={20} />
-                        </span>
-                      </div>
-                      <div className="card-body">
-                        <h2>{game.name}</h2>
-                        <p>{game.keyLabel}</p>
-                        <div className="card-meta">
-                          <span>{game.installed ? '已安装' : '已卸载'}</span>
-                          <span>{game.bytesLabel}</span>
+                    <div className="game-card" key={game.key}>
+                      {/* 进入相册是卡片主体按钮；重试是并列按钮，不嵌套在按钮里 */}
+                      <button
+                        className="card-main"
+                        onClick={() => {
+                          setGameId(game.key)
+                          setSearch('')
+                          setSort('recent')
+                        }}
+                      >
+                        <div className="card-image">
+                          {coverUnavailable ? (
+                            <div className="card-missing">
+                              <ImagesIcon size={20} weight="light" />
+                              <span>{coverFailed ? '封面加载失败' : '暂无可用截图'}</span>
+                            </div>
+                          ) : (
+                            <img
+                              src={imageSrc(coverKey, game.coverUrl!)}
+                              alt={`${game.name} 最近一张截图`}
+                              onError={() => markImageFailed(coverKey)}
+                            />
+                          )}
+                          <span className="image-count">
+                            <ImagesIcon size={14} />
+                            {game.assetCount} 张
+                          </span>
+                          <span className="card-open">
+                            <ArrowRightIcon size={20} />
+                          </span>
                         </div>
-                      </div>
-                    </button>
+                        <div className="card-body">
+                          <h2>{game.name}</h2>
+                          <p>{game.keyLabel}</p>
+                          <div className="card-meta">
+                            <span>{game.installed ? '已安装' : '已卸载'}</span>
+                            <span>{game.bytesLabel}</span>
+                          </div>
+                        </div>
+                      </button>
+                      {coverFailed && game.coverUrl ? (
+                        <div className="card-actions">
+                          <button className="card-retry" onClick={() => retryImage(coverKey)}>
+                            <ArrowClockwiseIcon size={14} />
+                            重新加载封面
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   )
                 })}
               </div>
@@ -838,50 +835,53 @@ export function App() {
               <>
                 <div className="shot-grid">
                   {viewerItems.map((shot, index) => {
-                    const failed = failedImages.has(shot.id)
-                    const unavailable = isAssetUnavailable(shot.available, failed)
+                    const originalKey = IMAGE_FAILURE_KEYS.original(shot.id)
+                    const originalFailed = failedImages.has(originalKey)
+                    const unavailable = isAssetUnavailable(shot.available, originalFailed)
                     return (
-                      <button
-                        className="shot-card"
-                        key={shot.id}
-                        onClick={() => setViewer({ items: viewerItems, index })}
-                      >
-                        <div className="card-image">
-                          {unavailable ? (
-                            <div className="card-missing">
-                              <WarningCircleIcon size={20} weight="light" />
-                              <span>原图不可用</span>
-                              {failed ? (
-                                <button
-                                  className="text-button"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    retryImage(shot.id)
-                                  }}
-                                >
-                                  重试
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <img
-                              src={imageSrc(shot.id, shot.src)}
-                              alt={shot.title}
-                              loading="lazy"
-                              onError={() => markImageFailed(shot.id)}
-                            />
-                          )}
-                          <span className="card-open">
-                            <ImagesIcon size={20} />
-                          </span>
-                        </div>
-                        <div className="shot-caption">
-                          <strong>{shot.title}</strong>
-                          <span>
-                            {unavailable ? '原图不可用' : gameId ? shot.date : shot.gameName}
-                          </span>
-                        </div>
-                      </button>
+                      <div className="shot-card" key={shot.id}>
+                        {/* 打开大图是卡片主体按钮；重试是并列按钮，不嵌套在按钮里 */}
+                        <button
+                          className="card-main"
+                          onClick={() => setViewer({ items: viewerItems, index })}
+                        >
+                          <div className="card-image">
+                            {unavailable ? (
+                              <div className="card-missing">
+                                <WarningCircleIcon size={20} weight="light" />
+                                <span>原图不可用</span>
+                              </div>
+                            ) : (
+                              <img
+                                src={imageSrc(originalKey, shot.src)}
+                                alt={shot.title}
+                                loading="lazy"
+                                onError={() => markImageFailed(originalKey)}
+                              />
+                            )}
+                            <span className="card-open">
+                              <ImagesIcon size={20} />
+                            </span>
+                          </div>
+                          <div className="shot-caption">
+                            <strong>{shot.title}</strong>
+                            <span>
+                              {unavailable ? '原图不可用' : gameId ? shot.date : shot.gameName}
+                            </span>
+                          </div>
+                        </button>
+                        {originalFailed ? (
+                          <div className="card-actions">
+                            <button
+                              className="card-retry"
+                              onClick={() => retryImage(originalKey)}
+                            >
+                              <ArrowClockwiseIcon size={14} />
+                              重新加载原图
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     )
                   })}
                 </div>

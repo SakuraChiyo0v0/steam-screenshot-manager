@@ -1349,3 +1349,53 @@ dialog::backdrop {
   gap: 6px;
   margin-top: 4px;
 }
+
+/* ── 阶段 1 修复：卡片改非交互容器，进入与重试并列 ── */
+
+.game-card,
+.shot-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.card-main {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.card-actions {
+  padding: 0 12px 12px;
+}
+
+.card-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--raised);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.card-retry:hover {
+  border-color: var(--accent);
+}
+
+.card-missing {
+  padding-bottom: 4px;
+}

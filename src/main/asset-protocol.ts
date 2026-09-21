@@ -5,11 +5,8 @@
  * （词法检查 + realpath 检查），越界一律拒绝（docs/architecture.md §7、§8）。
  */
 
-import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
-import { extname } from 'node:path'
-import { Readable } from 'node:stream'
-import { protocol } from 'electron'
+import { pathToFileURL } from 'node:url'
+import { net, protocol } from 'electron'
 import { AppError } from '@shared/errors'
 import { resolveExistingAssetPath, thumbnailPathFor } from '@core/library/asset-paths'
 import { findAssetLocation } from '@core/library/queries'
@@ -29,33 +26,16 @@ export function thumbnailUrl(assetId: string): string {
 }
 
 
-function mimeTypeFor(filePath: string): string {
-  switch (extname(filePath).toLowerCase()) {
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg'
-    case '.png':
-      return 'image/png'
-    case '.avif':
-      return 'image/avif'
-    case '.tga':
-      return 'image/x-tga'
-    default:
-      return 'application/octet-stream'
-  }
-}
-
-async function fileResponse(filePath: string): Promise<Response> {
-  const info = await stat(filePath)
-  const stream = createReadStream(filePath)
-  return new Response(Readable.toWeb(stream) as ReadableStream, {
-    status: 200,
-    headers: {
-      'content-type': mimeTypeFor(filePath),
-      'content-length': String(info.size),
-      'cache-control': 'no-cache'
-    }
-  })
+/**
+ * 读取本地文件作为响应。
+ *
+ * 用 `net.fetch(file://…)` 而不是手工拼 ReadableStream：
+ * 手工流在被取消（页面重载、懒加载中止）时不会及时释放文件句柄，
+ * 累积后会占满该自定义协议的连接，导致后续图片请求永久 pending。
+ * net.fetch 自带中止处理、范围请求与内容类型推断。
+ */
+function fileResponse(filePath: string): Promise<Response> {
+  return net.fetch(pathToFileURL(filePath).toString(), { bypassCustomProtocolHandlers: true })
 }
 
 /** 必须在 app ready 之前调用，否则 `<img>` 无法使用该协议。 */

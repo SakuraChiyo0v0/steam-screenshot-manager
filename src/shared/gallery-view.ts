@@ -94,6 +94,21 @@ export function isAssetUnavailable(indexedAvailable: boolean, loadFailed: boolea
   return loadFailed || !indexedAvailable
 }
 
+/**
+ * 图片失败状态的键。
+ *
+ * 原图与缩略图必须分开记录：缩略图文件损坏时，原图往往仍然正常，
+ * 共用同一个键会把已经正常显示的主图一起关掉（复验报告 [P2]）。
+ */
+export const IMAGE_FAILURE_KEYS = {
+  /** 原图（相册网格与大图都用它判定可用性） */
+  original: (assetId: string): string => `${assetId}:orig`,
+  /** 缩略图（只影响缩略图自身，失败时回退原图） */
+  thumbnail: (assetId: string): string => `${assetId}:thumb`,
+  /** 游戏卡片封面（取该游戏最近一张截图的原图） */
+  cover: (gameKey: string): string => `${gameKey}:cover`
+} as const
+
 /** 记录加载失败的资产；返回新的集合，便于 React 判断引用变化。 */
 export function withFailedImage(
   failed: ReadonlySet<string>,

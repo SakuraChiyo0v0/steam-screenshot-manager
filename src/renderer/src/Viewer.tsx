@@ -9,17 +9,22 @@ import {
   WarningCircleIcon,
   ArrowClockwiseIcon
 } from '@phosphor-icons/react'
-import { isAssetUnavailable, withFailedImage, withRetryToken, withoutFailedImage } from '@shared/gallery-view'
+import {
+  IMAGE_FAILURE_KEYS,
+  isAssetUnavailable,
+  withFailedImage,
+  withRetryToken,
+  withoutFailedImage
+} from '@shared/gallery-view'
 import { Modal } from './Modal'
 import type { ViewerItem } from './view-model'
 
 /**
  * 大图查看器。
  *
- * 输入是真实资产（ViewerItem）。`available` 只代表查询时的索引状态，图片请求本身
- * 还会失败（文件被移走、来源断开、图片损坏），因此这里按 assetId 维护加载失败集合：
- * 失败的图切到"原图当前不可用"并提供重试，绝不继续显示破图或声称文件存在。
- * 失败状态按 assetId 记录，所以切到下一张不会沿用上一张的错误。
+ * 失败状态按「原图」与「缩略图」分别记录（IMAGE_FAILURE_KEYS）：
+ * 缩略图损坏只影响底部缩略图带（回退到原图，再不行才显示警告图标），
+ * 绝不据此关闭已经正常显示的主图。失败集合按 key 记录，切图不会沿用上一张的错误。
  */
 export function Viewer({
   items,
@@ -39,9 +44,10 @@ export function Viewer({
   const activeThumb = useRef<HTMLButtonElement>(null)
   const shot = items[index]!
 
-  const loadFailed = failed.has(shot.id)
-  const unavailable = isAssetUnavailable(shot.available, loadFailed)
-  const attempt = attempts[shot.id] ?? 0
+  const originalKey = IMAGE_FAILURE_KEYS.original(shot.id)
+  const originalFailed = failed.has(originalKey)
+  const unavailable = isAssetUnavailable(shot.available, originalFailed)
+  const attempt = attempts[originalKey] ?? 0
 
   useEffect(() => {
     activeThumb.current?.scrollIntoView({
@@ -82,14 +88,14 @@ export function Viewer({
     setNotice('')
   }
 
-  const markFailed = (assetId: string) => {
-    setFailed((current) => withFailedImage(current, assetId))
+  const markFailed = (key: string) => {
+    setFailed((current) => withFailedImage(current, key))
   }
 
-  const retry = (assetId: string) => {
-    setFailed((current) => withoutFailedImage(current, assetId))
-    setAttempts((current) => ({ ...current, [assetId]: (current[assetId] ?? 0) + 1 }))
-    setNotice('已重新请求原图。')
+  const retry = (key: string) => {
+    setFailed((current) => withoutFailedImage(current, key))
+    setAttempts((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
+    setNotice('已重新请求图片。')
   }
 
   return (
@@ -140,12 +146,12 @@ export function Viewer({
                   <WarningCircleIcon size={42} weight="light" />
                   <h2>原图当前不可用</h2>
                   <p>
-                    {loadFailed
+                    {originalFailed
                       ? '图片请求失败：文件可能已被移走、来源不可访问，或文件已损坏。索引状态显示为可用，但实际读取失败。'
                       : '这条索引对应的来源文件不存在或已不可访问。'}
                   </p>
-                  {loadFailed ? (
-                    <button onClick={() => retry(shot.id)}>
+                  {originalFailed ? (
+                    <button onClick={() => retry(originalKey)}>
                       <ArrowClockwiseIcon size={16} />
                       重新加载
                     </button>
@@ -153,10 +159,10 @@ export function Viewer({
                 </div>
               ) : (
                 <img
-                  key={shot.id}
+                  key={originalKey}
                   src={withRetryToken(shot.src, attempt)}
                   alt={shot.title}
-                  onError={() => markFailed(shot.id)}
+                  onError={() => markFailed(originalKey)}
                 />
               )}
             </div>
@@ -197,7 +203,7 @@ export function Viewer({
                 <dt>来源文件</dt>
                 <dd>
                   {unavailable
-                    ? loadFailed
+                    ? originalFailed
                       ? '索引显示存在，但实际读取失败'
                       : '缺失'
                     : '存在'}
@@ -221,24 +227,30 @@ export function Viewer({
           </div>
           <div className="filmstrip">
             {items.map((item, i) => {
-              const thumbUnavailable = isAssetUnavailable(item.available, failed.has(item.id))
+              const thumbKey = IMAGE_FAILURE_KEYS.thumbnail(item.id)
+              const itemOriginalKey = IMAGE_FAILURE_KEYS.original(item.id)
+              const thumbFailed = failed.has(thumbKey)
+              const itemOriginalFailed = failed.has(itemOriginalKey)
+              // 缩略图坏了先回退原图；只有缩略图与原图都不可用时才显示警告图标
+              const source = thumbFailed ? (itemOriginalFailed ? null : item.src) : item.thumbSrc
+              const sourceKey = thumbFailed ? itemOriginalKey : thumbKey
               return (
                 <button
                   ref={i === index ? activeThumb : null}
                   key={item.id}
                   className={i === index ? 'active' : ''}
-                  aria-label={`查看 ${item.title}`}
+                  aria-label={`查看 ${item.title}${thumbFailed ? '（缩略图不可用）' : ''}`}
                   aria-pressed={i === index}
                   onClick={() => go(i)}
                 >
-                  {thumbUnavailable ? (
-                    <WarningCircleIcon size={18} />
-                  ) : (
+                  {source ? (
                     <img
-                      src={withRetryToken(item.thumbSrc, attempts[item.id] ?? 0)}
+                      src={withRetryToken(source, attempts[sourceKey] ?? 0)}
                       alt=""
-                      onError={() => markFailed(item.id)}
+                      onError={() => markFailed(sourceKey)}
                     />
+                  ) : (
+                    <WarningCircleIcon size={18} />
                   )}
                   <span>{i + 1}</span>
                 </button>
