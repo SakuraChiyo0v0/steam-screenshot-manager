@@ -188,9 +188,37 @@ export const MIGRATIONS: readonly Migration[] = [
         'CREATE INDEX IF NOT EXISTS idx_remote_objects_status ON remote_objects (remote_id, publish_status)'
       )
     }
+  },
+  {
+    version: 5,
+    description: 'assets 增加原文件名（图库副本与远端记录都能提供）',
+    up(db) {
+      const columns = db.prepare('PRAGMA table_info(assets)').all() as { name: string }[]
+      if (!columns.some((column) => column.name === 'original_filename')) {
+        db.exec('ALTER TABLE assets ADD COLUMN original_filename TEXT')
+      }
+
+      // 回填：优先用仍然存在的来源相对路径的最后一段
+      const rows = db
+        .prepare(
+          `SELECT a.asset_id AS assetId,
+                  (SELECT sf.relative_path FROM source_files sf
+                    WHERE sf.asset_id = a.asset_id
+                    ORDER BY sf.present DESC, sf.last_seen_at DESC LIMIT 1) AS relativePath
+             FROM assets a
+            WHERE a.original_filename IS NULL`
+        )
+        .all() as { assetId: string; relativePath: string | null }[]
+      const update = db.prepare('UPDATE assets SET original_filename = ? WHERE asset_id = ?')
+      for (const row of rows) {
+        if (row.relativePath) {
+          const segments = String(row.relativePath).split(/[\\/]/)
+          update.run(segments[segments.length - 1] ?? null, row.assetId)
+        }
+      }
+    }
   }
 ]
-
 export interface MigrationOutcome {
   readonly from: number
   readonly to: number

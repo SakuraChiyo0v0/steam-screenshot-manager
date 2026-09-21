@@ -36,8 +36,12 @@ export interface AssetSummary {
   readonly captureTimeSource: string
   readonly available: boolean
   readonly hasThumbnail: boolean
+  /** 原文件名：来源存在时来自来源，图库副本存在时来自归档/恢复记录 */
+  readonly originalFilename: string | null
   /** 是否已有受管的图库副本 */
   readonly archived: boolean
+  /** 是否已在某个远端通过读回校验 */
+  readonly remoteVerified: boolean
 }
 
 export interface AssetDetail extends AssetSummary {
@@ -105,16 +109,18 @@ export function listGames(db: SqliteDatabase, options: ListGamesOptions = {}): G
          MAX(a.captured_at)                                AS latestCapturedAt,
          GROUP_CONCAT(DISTINCT a.account_key)              AS accounts,
          (SELECT a2.asset_id FROM assets a2
-            JOIN source_files sf2 ON sf2.asset_id = a2.asset_id AND sf2.present = 1
-           WHERE a2.game_key = a.game_key
-           ORDER BY COALESCE(a2.captured_at, '') DESC, a2.asset_id
-           LIMIT 1)                                        AS coverAssetId,
+            WHERE a2.game_key = a.game_key
+              AND (EXISTS (SELECT 1 FROM source_files sf2 WHERE sf2.asset_id = a2.asset_id AND sf2.present = 1)
+                   OR EXISTS (SELECT 1 FROM local_copies lc2 WHERE lc2.asset_id = a2.asset_id AND lc2.present = 1))
+            ORDER BY COALESCE(a2.captured_at, '') DESC, a2.asset_id
+            LIMIT 1)                                        AS coverAssetId,
          (SELECT COALESCE(MAX(sf3.has_thumbnail), 0) FROM source_files sf3
-           WHERE sf3.asset_id = (SELECT a3.asset_id FROM assets a3
-                                    JOIN source_files sf4 ON sf4.asset_id = a3.asset_id AND sf4.present = 1
-                                   WHERE a3.game_key = a.game_key
-                                   ORDER BY COALESCE(a3.captured_at, '') DESC, a3.asset_id
-                                   LIMIT 1))           AS coverHasThumbnail
+            WHERE sf3.asset_id = (SELECT a3.asset_id FROM assets a3
+                                    WHERE a3.game_key = a.game_key
+                                      AND (EXISTS (SELECT 1 FROM source_files sf4 WHERE sf4.asset_id = a3.asset_id AND sf4.present = 1)
+                                           OR EXISTS (SELECT 1 FROM local_copies lc4 WHERE lc4.asset_id = a3.asset_id AND lc4.present = 1))
+                                    ORDER BY COALESCE(a3.captured_at, '') DESC, a3.asset_id
+                                    LIMIT 1))           AS coverHasThumbnail
        FROM assets a
        JOIN games g ON g.game_key = a.game_key
        ${where}
@@ -187,13 +193,16 @@ const ASSET_SELECT = `
     a.height              AS height,
     a.captured_at         AS capturedAt,
     a.capture_time_source AS captureTimeSource,
+    a.original_filename   AS originalFilename,
     (SELECT sf.relative_path FROM source_files sf
       WHERE sf.asset_id = a.asset_id AND sf.present = 1
       ORDER BY sf.relative_path LIMIT 1)              AS relativePath,
     (SELECT COALESCE(MAX(sf2.has_thumbnail), 0) FROM source_files sf2
       WHERE sf2.asset_id = a.asset_id AND sf2.present = 1) AS hasThumbnail,
     EXISTS (SELECT 1 FROM local_copies lc
-             WHERE lc.asset_id = a.asset_id AND lc.present = 1) AS archived
+             WHERE lc.asset_id = a.asset_id AND lc.present = 1) AS archived,
+    EXISTS (SELECT 1 FROM remote_objects ro
+             WHERE ro.asset_id = a.asset_id AND ro.publish_status = 'verified') AS remoteVerified
   FROM assets a
   JOIN games g ON g.game_key = a.game_key
 `
@@ -205,15 +214,20 @@ function mapAssetRow(row: Record<string, unknown>): AssetDetail {
     accountKey: String(row.accountKey),
     gameKey: String(row.gameKey),
     gameName: String(row.gameName),
-    fileName: relativePath.length > 0 ? baseName(relativePath) : '(来源缺失)',
+    fileName:
+      toNullableString(row.originalFilename) ??
+      (relativePath.length > 0 ? baseName(relativePath) : '(来源缺失)'),
     bytes: Number(row.bytes),
     width: row.width === null || row.width === undefined ? null : Number(row.width),
     height: row.height === null || row.height === undefined ? null : Number(row.height),
     capturedAt: toNullableString(row.capturedAt),
     captureTimeSource: String(row.captureTimeSource),
-    available: relativePath.length > 0,
+    // 来源存在、或本地图库已有副本，都算可读
+    available: relativePath.length > 0 || Number(row.archived ?? 0) === 1,
     hasThumbnail: Number(row.hasThumbnail ?? 0) === 1,
     archived: Number(row.archived ?? 0) === 1,
+    remoteVerified: Number(row.remoteVerified ?? 0) === 1,
+    originalFilename: toNullableString(row.originalFilename),
     ext: String(row.ext),
     sha256: String(row.sha256),
     kind: String(row.kind),
@@ -326,7 +340,8 @@ export interface AssetLocation {
 }
 
 export function findAssetLocation(db: SqliteDatabase, assetId: string): AssetLocation | null {
-  const row = db
+  // 1) 来源优先：来源目录还带着 Steam 的缩略图，网格渲染更省资源
+  const sourceRow = db
     .prepare(
       `SELECT s.root_path AS rootPath, sf.relative_path AS relativePath, sf.has_thumbnail AS hasThumbnail
          FROM source_files sf
@@ -337,13 +352,32 @@ export function findAssetLocation(db: SqliteDatabase, assetId: string): AssetLoc
     )
     .get(assetId)
 
-  if (!row) {
+  if (sourceRow) {
+    return {
+      rootPath: String(sourceRow.rootPath),
+      relativePath: String(sourceRow.relativePath),
+      hasThumbnail: Number(sourceRow.hasThumbnail ?? 0) === 1
+    }
+  }
+
+  // 2) 回退到独立图库的受管副本：来源被移除、换电脑恢复后，图仍然要能看
+  const copyRow = db
+    .prepare(
+      `SELECT lc.library_root AS rootPath, lc.relative_path AS relativePath
+         FROM local_copies lc
+        WHERE lc.asset_id = ? AND lc.present = 1
+        ORDER BY lc.verified_at DESC
+        LIMIT 1`
+    )
+    .get(assetId)
+
+  if (!copyRow) {
     return null
   }
   return {
-    rootPath: String(row.rootPath),
-    relativePath: String(row.relativePath),
-    hasThumbnail: Number(row.hasThumbnail ?? 0) === 1
+    rootPath: String(copyRow.rootPath),
+    relativePath: String(copyRow.relativePath),
+    hasThumbnail: false
   }
 }
 

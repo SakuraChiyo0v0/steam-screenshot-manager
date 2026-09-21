@@ -12,6 +12,13 @@ import { randomUUID } from 'node:crypto'
 import type { SqliteDatabase } from '../db/sqlite'
 import { accountKeyFor, type KnownHash, type ScanOutcome } from '../steam/scanner'
 
+/** 取相对路径的最后一段，作为原文件名。 */
+function baseNameOf(relativePath: string): string {
+  const normalized = relativePath.replace(/\\/g, '/')
+  const index = normalized.lastIndexOf('/')
+  return index >= 0 ? normalized.slice(index + 1) : normalized
+}
+
 export interface IndexWriteResult {
   readonly assets: number
   readonly sourceFiles: number
@@ -120,11 +127,12 @@ export function writeScanOutcome(db: SqliteDatabase, input: WriteScanInput): Ind
          FROM assets WHERE account_key = ? AND game_key = ? AND sha256 = ?`
     )
     const insertAsset = db.prepare(
-      `INSERT INTO assets (asset_id, account_key, game_key, sha256, bytes, ext, width, height, captured_at, capture_time_source, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO assets (asset_id, account_key, game_key, sha256, bytes, ext, width, height, captured_at, capture_time_source, created_at, original_filename)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     const updateAsset = db.prepare(
-      `UPDATE assets SET bytes = ?, ext = ?, width = ?, height = ?, captured_at = ?, capture_time_source = ?
+      `UPDATE assets SET bytes = ?, ext = ?, width = ?, height = ?, captured_at = ?, capture_time_source = ?,
+              original_filename = COALESCE(original_filename, ?)
         WHERE asset_id = ?`
     )
     const upsertSourceFile = db.prepare(
@@ -161,6 +169,7 @@ export function writeScanOutcome(db: SqliteDatabase, input: WriteScanInput): Ind
           candidate.height ?? existing.height,
           capturedAt,
           captureTimeSource,
+          baseNameOf(candidate.relativePath),
           assetId
         )
       } else {
@@ -176,7 +185,8 @@ export function writeScanOutcome(db: SqliteDatabase, input: WriteScanInput): Ind
           candidate.height,
           candidate.capturedAt,
           candidate.captureTimeSource,
-          seenAt
+          seenAt,
+          baseNameOf(candidate.relativePath)
         )
         assetCount += 1
       }

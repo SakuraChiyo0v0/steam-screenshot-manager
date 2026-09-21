@@ -255,3 +255,12 @@ export function parseUploadStart(value: unknown): { forceRetry?: boolean } {
   }
   return forceRetry === true ? { forceRetry: true } : {}
 }
+
+export function parseRestoreStart(value: unknown): { gameKeys?: string[] } {
+  if (value === undefined || value === null) {
+    return {}
+  }
+  const payload = asObject(value, '恢复参数')
+  const gameKeys = optionalStringArray(payload['gameKeys'], '游戏列表')
+  return gameKeys === undefined ? {} : { gameKeys }
+}

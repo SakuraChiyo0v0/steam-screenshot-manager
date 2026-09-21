@@ -35,6 +35,7 @@ export interface ViewerItem {
   readonly gameName: string
   readonly available: boolean
   readonly archived: boolean
+  readonly backedUp: boolean
   readonly width: number | null
   readonly height: number | null
   readonly bytes: number
@@ -99,10 +100,11 @@ export function toViewerItem(asset: GalleryAssetDto): ViewerItem {
     thumbSrc: asset.thumbnailUrl,
     date: formatCapturedAt(asset.capturedAt),
     dateSource: CAPTURE_SOURCE_LABELS[asset.captureTimeSource] ?? '未知',
-    filename: asset.fileName,
+    filename: asset.originalFilename ?? asset.fileName,
     gameName: asset.gameName,
     available: asset.available,
     archived: asset.archived,
+    backedUp: asset.remoteVerified,
     width: asset.width,
     height: asset.height,
     bytes: asset.bytes,

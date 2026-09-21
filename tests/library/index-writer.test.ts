@@ -168,7 +168,9 @@ describe('索引写入', () => {
     const page = listAssets(db, {})
     const missing = page.items.find((item) => !item.available)
     expect(missing).toBeDefined()
-    expect(missing!.fileName).toBe('(来源缺失)')
+    // 来源不在了，但原文件名被记住，不再退化成占位文案
+    expect(missing!.fileName).toBe('b.jpg')
+    expect(missing!.originalFilename).toBe('b.jpg')
   })
 
   it('按账号隔离存在状态：只标记本次扫描账号下的文件', () => {

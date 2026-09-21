@@ -224,6 +224,19 @@ async function hashExistingFile(filePath: string): Promise<string> {
   return hash.digest('hex')
 }
 
+/** 写入本地说明文件（临时文件 + 改名）。归档与恢复共用。 */
+export function writeLocalMetadata(
+  libraryRoot: string,
+  relativePath: string,
+  payload: Record<string, unknown>
+): void {
+  const absolutePath = join(libraryRoot, relativePath)
+  mkdirSync(dirname(absolutePath), { recursive: true })
+  const temporary = `${absolutePath}.tmp`
+  writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+  renameSync(temporary, absolutePath)
+}
+
 function writeMetadata(
   libraryRoot: string,
   candidate: ArchiveCandidate,
@@ -250,13 +263,11 @@ function writeMetadata(
     archivedAt
   }
 
-  const temporary = `${absolutePath}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-  renameSync(temporary, absolutePath)
+  writeLocalMetadata(libraryRoot, relativePath, payload)
   return relativePath
 }
 
-function upsertLocalCopy(
+export function upsertLocalCopy(
   db: SqliteDatabase,
   input: {
     assetId: string

@@ -171,6 +171,10 @@ export interface GalleryAssetDto {
   readonly available: boolean
   /** 是否已有受管的图库副本 */
   readonly archived: boolean
+  /** 原文件名（来源与图库副本都记录） */
+  readonly originalFilename: string | null
+  /** 是否已在某个远端通过读回校验 */
+  readonly remoteVerified: boolean
   readonly imageUrl: string
   readonly thumbnailUrl: string
 }
@@ -307,4 +311,57 @@ export interface UploadSummaryDto {
   readonly abortedByAuth: boolean
   readonly durationMs: number
   readonly libraryId: string
+}
+
+/* ------------------------------------------------------------------ *
+ * 从远端恢复
+ * ------------------------------------------------------------------ */
+
+export interface RestoreGamePlanDto {
+  readonly gameKey: string
+  readonly gameName: string
+  readonly assets: number
+  readonly bytes: number
+  readonly alreadyLocal: number
+}
+
+export interface RemoteCatalogDto {
+  readonly libraryId: string
+  readonly records: number
+  readonly invalidRecords?: number
+  readonly games: readonly RestoreGamePlanDto[]
+  readonly errors?: readonly string[]
+}
+
+export interface RestoreStatusDto {
+  readonly running: boolean
+  readonly phase: 'scanning' | 'restoring' | null
+  readonly processed: number
+  readonly total: number | null
+  readonly restored: number
+  readonly skipped: number
+  readonly failed: number
+  readonly currentFile: string | null
+  readonly startedAt: string | null
+  readonly finishedAt: string | null
+  readonly errorCode: string | null
+  readonly errorMessage: string | null
+}
+
+export interface RestoreFailureDto {
+  readonly recordId: string
+  readonly objectKey: string
+  readonly code: string
+  readonly message: string
+}
+
+export interface RestoreSummaryDto {
+  readonly total: number
+  readonly restored: number
+  readonly skipped: number
+  readonly failed: number
+  readonly cancelled: boolean
+  readonly abortedByAuth: boolean
+  readonly durationMs: number
+  readonly failures: readonly RestoreFailureDto[]
 }

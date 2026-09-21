@@ -17,6 +17,9 @@ import type {
   RemoteConnectionDto,
   RemoteStateDto,
   UploadStatusDto,
+  RemoteCatalogDto,
+  RestoreStatusDto,
+  RestoreSummaryDto,
   UploadSummaryDto,
   AppInfo,
   AssetSortType,
@@ -72,7 +75,12 @@ export const IPC_CHANNELS = {
   syncState: 'sync:state',
   uploadStart: 'upload:start',
   uploadCancel: 'upload:cancel',
-  uploadStatus: 'upload:status'
+  uploadStatus: 'upload:status',
+  // 从远端恢复
+  syncCatalog: 'sync:catalog',
+  restoreStart: 'restore:start',
+  restoreCancel: 'restore:cancel',
+  restoreStatus: 'restore:status'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -82,7 +90,8 @@ export const IPC_EVENTS = {
   scanProgress: 'scan:progress',
   archiveProgress: 'archive:progress',
   exportProgress: 'export:progress',
-  uploadProgress: 'upload:progress'
+  uploadProgress: 'upload:progress',
+  restoreProgress: 'restore:progress'
 } as const
 
 /** 暴露给渲染层的方法名白名单（invoke 型）。 */
@@ -118,7 +127,11 @@ export const EXPOSED_METHODS = [
   'getRemoteState',
   'startUpload',
   'cancelUpload',
-  'getUploadStatus'
+  'getUploadStatus',
+  'scanRemoteCatalog',
+  'startRestore',
+  'cancelRestore',
+  'getRestoreStatus'
 ] as const
 
 export type ExposedMethod = (typeof EXPOSED_METHODS)[number]
@@ -132,7 +145,9 @@ export const EVENT_METHODS = [
   'onExportProgress',
   'offExportProgress',
   'onUploadProgress',
-  'offUploadProgress'
+  'offUploadProgress',
+  'onRestoreProgress',
+  'offRestoreProgress'
 ] as const
 
 /** 方法名到通道的映射：preload 与主进程共用，避免两处清单漂移。 */
@@ -168,7 +183,11 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   getRemoteState: IPC_CHANNELS.syncState,
   startUpload: IPC_CHANNELS.uploadStart,
   cancelUpload: IPC_CHANNELS.uploadCancel,
-  getUploadStatus: IPC_CHANNELS.uploadStatus
+  getUploadStatus: IPC_CHANNELS.uploadStatus,
+  scanRemoteCatalog: IPC_CHANNELS.syncCatalog,
+  startRestore: IPC_CHANNELS.restoreStart,
+  cancelRestore: IPC_CHANNELS.restoreCancel,
+  getRestoreStatus: IPC_CHANNELS.restoreStatus
 }
 
 export type IpcResult<T> = Ok<T> | Err
@@ -232,6 +251,11 @@ export interface ConnectRemotePayload {
   readonly libraryId?: string | null
 }
 
+export interface RestoreStartPayload {
+  /** 只恢复这些游戏；为空表示全部 */
+  readonly gameKeys?: readonly string[]
+}
+
 export interface UploadStartPayload {
   /** 忽略退避窗口，立刻重试失败项 */
   readonly forceRetry?: boolean
@@ -279,6 +303,11 @@ export interface RendererApi {
   cancelUpload(): Promise<IpcResult<UploadStatusDto>>
   getUploadStatus(): Promise<IpcResult<UploadStatusDto>>
 
+  scanRemoteCatalog(): Promise<IpcResult<RemoteCatalogDto>>
+  startRestore(payload?: RestoreStartPayload): Promise<IpcResult<RestoreSummaryDto>>
+  cancelRestore(): Promise<IpcResult<RestoreStatusDto>>
+  getRestoreStatus(): Promise<IpcResult<RestoreStatusDto>>
+
   /** 订阅进度事件；同一时刻只保留一个监听器 */
   onScanProgress(listener: (progress: ScanProgressDto) => void): void
   offScanProgress(): void
@@ -288,4 +317,6 @@ export interface RendererApi {
   offExportProgress(): void
   onUploadProgress(listener: (status: UploadStatusDto) => void): void
   offUploadProgress(): void
+  onRestoreProgress(listener: (status: RestoreStatusDto) => void): void
+  offRestoreProgress(): void
 }

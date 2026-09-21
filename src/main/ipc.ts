@@ -18,8 +18,11 @@ import type {
   ExportStatusDto,
   ExportSummaryDto,
   LibraryCopyStateDto,
+  RemoteCatalogDto,
   RemoteConnectionDto,
   RemoteStateDto,
+  RestoreStatusDto,
+  RestoreSummaryDto,
   UploadStatusDto,
   UploadSummaryDto,
   DbHealth,
@@ -62,9 +65,16 @@ import {
   parseListAssets,
   parseListGames,
   parseRemoveSource,
+  parseRestoreStart,
   parseScanStart,
   parseUploadStart
 } from './payloads'
+import {
+  cancelRestore,
+  getRestoreStatus,
+  runRestore,
+  scanRemoteCatalog,
+} from './restore-job'
 import {
   cancelUpload,
   connectRemote,
@@ -158,6 +168,8 @@ function toGalleryAsset(detail: AssetSummary): GalleryAssetDto {
     captureTimeSource: detail.captureTimeSource as GalleryAssetDto['captureTimeSource'],
     available: detail.available,
     archived: detail.archived,
+    originalFilename: detail.originalFilename,
+    remoteVerified: detail.remoteVerified,
     imageUrl: assetUrl(detail.assetId),
     thumbnailUrl: thumbnailUrl(detail.assetId)
   }
@@ -394,4 +406,16 @@ export function registerIpcHandlers(): void {
   handle(IPC_CHANNELS.uploadCancel, (): UploadStatusDto => cancelUpload())
 
   handle(IPC_CHANNELS.uploadStatus, (): UploadStatusDto => getUploadStatus())
+
+  /* ---------------- 从远端恢复 ---------------- */
+
+  handle(IPC_CHANNELS.syncCatalog, async (): Promise<RemoteCatalogDto> => scanRemoteCatalog())
+
+  handle(IPC_CHANNELS.restoreStart, async (payload): Promise<RestoreSummaryDto> => {
+    return runRestore(parseRestoreStart(payload))
+  })
+
+  handle(IPC_CHANNELS.restoreCancel, (): RestoreStatusDto => cancelRestore())
+
+  handle(IPC_CHANNELS.restoreStatus, (): RestoreStatusDto => getRestoreStatus())
 }

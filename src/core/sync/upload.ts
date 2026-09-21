@@ -119,6 +119,7 @@ function readCandidateRows(
          a.height              AS height,
          a.captured_at         AS capturedAt,
          a.capture_time_source AS captureTimeSource,
+         a.original_filename   AS originalFilename,
          lc.relative_path      AS localRelativePath,
          lc.library_root       AS libraryRoot
        FROM local_copies lc
@@ -149,6 +150,11 @@ function readCandidateRows(
 
     const localRelativePath = String(row.localRelativePath)
     const fileName = localRelativePath.slice(localRelativePath.lastIndexOf('/') + 1)
+    // 原文件名以资产记录为准（来源文件名），图库路径的文件名是指纹，不能当成原名
+    const originalFilename =
+      row.originalFilename === null || row.originalFilename === undefined
+        ? fileName
+        : String(row.originalFilename)
     const uploadId = row.uploadId === null || row.uploadId === undefined ? randomUUID() : String(row.uploadId)
     const recordId = row.recordId === null || row.recordId === undefined ? randomUUID() : String(row.recordId)
     const objectKey =
@@ -176,7 +182,7 @@ function readCandidateRows(
       height: row.height === null ? null : Number(row.height),
       capturedAt: row.capturedAt === null ? null : String(row.capturedAt),
       captureTimeSource: String(row.captureTimeSource),
-      originalFilename: fileName,
+      originalFilename,
       localFilePath: join(String(row.libraryRoot), ...localRelativePath.split('/')),
       uploadId,
       objectKey,
