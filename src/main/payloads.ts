@@ -18,6 +18,15 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const ACCOUNT_ID_PATTERN = /^\d{1,20}$/
 const ASSET_SORTS: readonly AssetSortType[] = ['captured-desc', 'captured-asc', 'imported-desc']
 
+export function parseSteamScreenshotPreview(value: unknown): { targetId: string; accountId: string; gameKeys: string[] } {
+  const payload = asObject(value, 'Steam 恢复参数')
+  if (typeof payload.targetId !== 'string' || !/^\d{1,5}$/.test(payload.targetId) || typeof payload.accountId !== 'string' || !/^[1-9]\d{0,9}$/.test(payload.accountId) || !Array.isArray(payload.gameKeys) || payload.gameKeys.length === 0 || payload.gameKeys.length > 1000 || payload.gameKeys.some(game => typeof game !== 'string' || !/^(steam|shortcut)-\d{1,20}$/.test(game))) throw new AppError('IPC_INVALID_INPUT', 'Steam 恢复目标或游戏范围不合法')
+  return { targetId: payload.targetId, accountId: payload.accountId, gameKeys: [...new Set(payload.gameKeys as string[])] }
+}
+export function parseSteamScreenshotJob(value: unknown, key: 'planId' | 'jobId'): string {
+  return requireUuid(asObject(value, 'Steam 恢复任务')[key], key)
+}
+
 function asObject(value: unknown, what: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new AppError('IPC_INVALID_INPUT', `${what}必须是对象`)

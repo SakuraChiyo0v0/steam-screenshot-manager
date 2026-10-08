@@ -61,6 +61,7 @@ import {
 import { Viewer } from './Viewer'
 import { Modal } from './Modal'
 import { Diagnostics } from './Diagnostics'
+import { SteamScreenshotRestore } from './SteamScreenshotRestore'
 
 type Page = 'library' | 'all' | 'sync' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -1267,6 +1268,7 @@ export function App() {
 
         {page === 'sync' && (
           <>
+            <SteamScreenshotRestore />
             {!remoteConnected ? (
               <div className="connection-banner">
                 <span className="connection-icon">

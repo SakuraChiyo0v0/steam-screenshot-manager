@@ -6,6 +6,7 @@
  */
 
 import type { Err, Ok } from './errors'
+import type { SteamScreenshotPreview, SteamScreenshotResult, SteamScreenshotState, SteamScreenshotTarget } from './steam-screenshot'
 import type {
   AccountSummaryDto,
   ArchiveStatusDto,
@@ -42,6 +43,12 @@ import type {
 } from './types'
 
 export const IPC_CHANNELS = {
+  steamScreenshotTargets: 'steamscreenshots:targets',
+  steamScreenshotPreview: 'steamscreenshots:preview',
+  steamScreenshotRun: 'steamscreenshots:run',
+  steamScreenshotState: 'steamscreenshots:state',
+  steamScreenshotCancel: 'steamscreenshots:cancel',
+  steamScreenshotUndo: 'steamscreenshots:undo',
   // 应用与设置（工程基础阶段）
   appGetInfo: 'app:getInfo',
   settingsGet: 'settings:get',
@@ -107,6 +114,8 @@ export const IPC_EVENTS = {
 
 /** 暴露给渲染层的方法名白名单（invoke 型）。 */
 export const EXPOSED_METHODS = [
+  'getSteamScreenshotTargets', 'previewSteamScreenshots', 'restoreSteamScreenshots',
+  'getSteamScreenshotState', 'cancelSteamScreenshots', 'undoSteamScreenshots',
   'getAppInfo',
   'getSettings',
   'updateSettings',
@@ -170,6 +179,12 @@ export const EVENT_METHODS = [
 
 /** 方法名到通道的映射：preload 与主进程共用，避免两处清单漂移。 */
 export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
+  getSteamScreenshotTargets: IPC_CHANNELS.steamScreenshotTargets,
+  previewSteamScreenshots: IPC_CHANNELS.steamScreenshotPreview,
+  restoreSteamScreenshots: IPC_CHANNELS.steamScreenshotRun,
+  getSteamScreenshotState: IPC_CHANNELS.steamScreenshotState,
+  cancelSteamScreenshots: IPC_CHANNELS.steamScreenshotCancel,
+  undoSteamScreenshots: IPC_CHANNELS.steamScreenshotUndo,
   getAppInfo: IPC_CHANNELS.appGetInfo,
   getSettings: IPC_CHANNELS.settingsGet,
   updateSettings: IPC_CHANNELS.settingsUpdate,
@@ -291,6 +306,12 @@ export interface UploadStartPayload {
 
 /** 渲染层可用的接口，由 preload 注入到 window.api。 */
 export interface RendererApi {
+  getSteamScreenshotTargets(): Promise<IpcResult<SteamScreenshotTarget[]>>
+  previewSteamScreenshots(input: { targetId: string; accountId: string; gameKeys: string[] }): Promise<IpcResult<SteamScreenshotPreview>>
+  restoreSteamScreenshots(input: { planId: string }): Promise<IpcResult<SteamScreenshotResult>>
+  getSteamScreenshotState(): Promise<IpcResult<SteamScreenshotState>>
+  cancelSteamScreenshots(): Promise<IpcResult<null>>
+  undoSteamScreenshots(input: { jobId: string }): Promise<IpcResult<null>>
   getAppInfo(): Promise<IpcResult<AppInfo>>
   getSettings(): Promise<IpcResult<Settings>>
   updateSettings(patch: Partial<Settings>): Promise<IpcResult<Settings>>

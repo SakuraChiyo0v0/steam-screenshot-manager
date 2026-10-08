@@ -23,6 +23,7 @@ import { readVerifyRestoreTarget, runVerifyRestore } from './verify-restore'
 import { readBuildPreviewsTarget, runBuildPreviews } from './build-previews'
 import { createTray, destroyTray, refreshTray } from './tray'
 import { rescheduleAutoCollect } from './auto-collect'
+import { applyLoginItem } from './login-item'
 import { reconcileNow } from './archive-job'
 
 const SELF_CHECK_FLAG = '--self-check'
@@ -88,15 +89,6 @@ function createWindow(): BrowserWindow {
 /** 是否正在真正退出（用于区分"关闭窗口"与"退出应用"）。 */
 let quitting = false
 let trayTimer: NodeJS.Timeout | null = null
-
-/** 开机自启跟随设置。 */
-export function applyLoginItem(enabled: boolean): void {
-  try {
-    app.setLoginItemSettings({ openAtLogin: enabled, args: [] })
-  } catch (error) {
-    console.warn('[启动项] 设置失败：', error instanceof Error ? error.message : String(error))
-  }
-}
 
 function focusExistingWindow(): void {
   if (!mainWindow) {

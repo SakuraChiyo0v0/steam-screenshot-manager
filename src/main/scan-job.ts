@@ -6,6 +6,7 @@
  */
 
 import { BrowserWindow } from 'electron'
+import { assertScreenshotRestoreIdle } from './steam-screenshot-job'
 import { AppError } from '@shared/errors'
 import { IPC_EVENTS } from '@shared/ipc'
 import type { ScanStatusDto, ScanSummaryDto } from '@shared/types'
@@ -71,6 +72,7 @@ export async function startScan(input: {
   sourceId: string
   accountIds: readonly string[]
 }): Promise<ScanSummaryDto> {
+  assertScreenshotRestoreIdle()
   if (running) {
     throw new AppError('JOB_RUNNING', '已有扫描任务在执行')
   }

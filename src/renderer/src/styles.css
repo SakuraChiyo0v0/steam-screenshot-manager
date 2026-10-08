@@ -1,3 +1,9 @@
+.steam-restore-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.steam-restore-game-list { max-height: 240px; overflow: auto; }
+.steam-restore-preview { margin-top: 20px; }
+.steam-restore-preview ul { max-height: 280px; overflow: auto; overflow-wrap: anywhere; }
+.steam-restore-preview details, .settings-card > details { margin-top: 12px; }
+.steam-restore-fields select { width: 100%; min-width: 0; }
 :root {
   font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
   font-size: 14px;

@@ -7,6 +7,7 @@
 
 import { join } from 'node:path'
 import { BrowserWindow } from 'electron'
+import { assertScreenshotRestoreIdle } from './steam-screenshot-job'
 import { AppError } from '@shared/errors'
 import { IPC_EVENTS } from '@shared/ipc'
 import type {
@@ -173,6 +174,7 @@ export async function runArchive(input: {
   gameKeys?: readonly string[]
   assetIds?: readonly string[]
 }): Promise<ArchiveSummaryDto> {
+  assertScreenshotRestoreIdle()
   if (archiveJob) {
     throw new AppError('JOB_RUNNING', '已有归档任务在执行')
   }

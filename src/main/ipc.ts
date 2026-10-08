@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto'
 import { app, dialog, ipcMain, net } from 'electron'
 import { AppError, ok, toErr } from '@shared/errors'
 import { IPC_CHANNELS } from '@shared/ipc'
+import { getSteamScreenshotTargets, previewSteamScreenshotRestore, runSteamScreenshotRestore, getSteamScreenshotState, cancelSteamScreenshotRestore, undoSteamScreenshotRestore, assertScreenshotRestoreIdle } from './steam-screenshot-job'
+import { parseSteamScreenshotPreview, parseSteamScreenshotJob } from './payloads'
 import type {
   AccountSummaryDto,
   AppInfo,
@@ -61,7 +63,7 @@ import type { AssetSummary } from '@core/library/queries'
 import { assetUrl, miniUrl, thumbnailUrl } from './asset-protocol'
 import type { SqliteDatabase } from '@core/db/sqlite'
 import { getAppContext } from './app-context'
-import { applyLoginItem } from './index'
+import { applyLoginItem } from './login-item'
 import { rescheduleAutoCollect } from './auto-collect'
 import { previewStats, resolvePreviewCacheRoot } from '@core/library/previews'
 import {
@@ -120,6 +122,8 @@ import { cancelScan, getScanStatus, startScan } from './scan-job'
 function handle(channel: string, handler: (payload: unknown) => unknown): void {
   ipcMain.handle(channel, async (_event, payload: unknown) => {
     try {
+      const protectedChannels: readonly string[] = [IPC_CHANNELS.scanStart, IPC_CHANNELS.archiveStart, IPC_CHANNELS.restoreStart, 'steam:restoreLoginUsers']
+      if (protectedChannels.includes(channel)) assertScreenshotRestoreIdle()
       return ok(await handler(payload))
     } catch (error) {
       return toErr(error)
@@ -212,6 +216,12 @@ function toGalleryAsset(detail: AssetSummary): GalleryAssetDto {
 }
 
 export function registerIpcHandlers(): void {
+  handle(IPC_CHANNELS.steamScreenshotTargets, () => getSteamScreenshotTargets())
+  handle(IPC_CHANNELS.steamScreenshotPreview, payload => previewSteamScreenshotRestore(parseSteamScreenshotPreview(payload)))
+  handle(IPC_CHANNELS.steamScreenshotRun, payload => runSteamScreenshotRestore(parseSteamScreenshotJob(payload, 'planId')))
+  handle(IPC_CHANNELS.steamScreenshotState, () => getSteamScreenshotState())
+  handle(IPC_CHANNELS.steamScreenshotCancel, () => { cancelSteamScreenshotRestore(); return null })
+  handle(IPC_CHANNELS.steamScreenshotUndo, async payload => { await undoSteamScreenshotRestore(parseSteamScreenshotJob(payload, 'jobId')); return null })
   /* ---------------- 应用与设置（工程基础阶段 既有） ---------------- */
 
   handle(IPC_CHANNELS.appGetInfo, (): AppInfo => {

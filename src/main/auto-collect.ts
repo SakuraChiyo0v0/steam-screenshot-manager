@@ -18,6 +18,7 @@ import { getScanStatus, startScan } from './scan-job'
 import { getArchiveStatus, runArchive } from './archive-job'
 import { getUploadStatus, runUpload } from './sync-job'
 import { getRemoteState } from './sync-job'
+import { isSteamScreenshotRestoreRunning } from './steam-screenshot-job'
 
 export interface AutoCollectState {
   readonly enabled: boolean
@@ -49,7 +50,7 @@ function log(message: string): void {
 
 /** 串行执行一轮：扫描 → 归档 →（可选）上传。 */
 async function runOnce(reason: string): Promise<void> {
-  if (state.running) {
+  if (state.running || isSteamScreenshotRestoreRunning()) {
     return
   }
   const { database } = getAppContext()
