@@ -28,6 +28,7 @@ import type {
   CompleteNamesResultDto,
   JobSummaryDto,
   RemoteBrowseDto,
+  RemoteTargetDto,
   SyncSummaryDto,
   RemoteCatalogDto,
   RemoteConnectionDto,
@@ -112,6 +113,7 @@ import {
   cancelUpload,
   browseRemote,
   connectRemote,
+  remoteTargets,
   syncSummary,
   disconnectRemote,
   getRemoteState,
@@ -639,6 +641,8 @@ export function registerIpcHandlers(): void {
 
   handle(IPC_CHANNELS.syncSummary, (): SyncSummaryDto => syncSummary())
 
+  handle(IPC_CHANNELS.syncTargets, (): RemoteTargetDto[] => remoteTargets())
+
   handle(IPC_CHANNELS.jobsList, (): JobSummaryDto[] => listJobs())
 
   handle(IPC_CHANNELS.jobsCancel, (payload): JobSummaryDto[] => {
@@ -649,7 +653,11 @@ export function registerIpcHandlers(): void {
     return cancelJob(input.id)
   })
 
-  handle(IPC_CHANNELS.syncDisconnect, (): RemoteStateDto => disconnectRemote())
+  handle(IPC_CHANNELS.syncDisconnect, (payload): RemoteStateDto => {
+    const input = payload as { remoteId?: unknown } | undefined
+    const remoteId = typeof input?.remoteId === 'string' ? input.remoteId : undefined
+    return disconnectRemote(remoteId)
+  })
 
   handle(IPC_CHANNELS.syncState, (): RemoteStateDto => getRemoteState())
 

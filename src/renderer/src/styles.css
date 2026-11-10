@@ -1841,3 +1841,24 @@ dialog.remote-browser {
 }
 .stat-row .stat strong { font-size: 1.25rem; font-weight: 650; }
 .stat-row .stat strong.danger { color: #c53030; }
+
+/* 备份地址列表 */
+.target-list { display: grid; gap: 6px; margin: 8px 0 4px; }
+.target-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.035);
+  font-size: 0.84rem;
+}
+.target-kind {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(47, 133, 90, 0.14);
+  color: var(--accent, #2f855a);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+.target-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

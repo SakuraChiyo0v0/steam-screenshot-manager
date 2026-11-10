@@ -351,6 +351,20 @@ export interface SyncSummaryDto {
   readonly remoteBaseUrl: string | null
 }
 
+/** 一个备份地址（可以配多个：本机盘 / NAS 共享 / WebDAV）。 */
+export interface RemoteTargetDto {
+  readonly remoteId: string
+  readonly kind: RemoteKind
+  readonly baseUrl: string
+  readonly libraryId: string
+  readonly lastCheckAt: string | null
+  readonly lastCheckStatus: string | null
+  readonly connected: boolean
+  readonly verified: number
+  readonly pending: number
+  readonly failed: number
+}
+
 /** 统一任务视图里的一项（扫描 / 归档 / 备份 / 恢复）。 */
 export interface JobSummaryDto {
   readonly id: string

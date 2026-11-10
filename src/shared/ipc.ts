@@ -41,6 +41,7 @@ import type {
   LibraryStatsDto,
   JobSummaryDto,
   RemoteBrowseDto,
+  RemoteTargetDto,
   SyncSummaryDto,
   RemoteKind,
   RegisteredSourceDto,
@@ -99,6 +100,8 @@ export const IPC_CHANNELS = {
   syncBrowse: 'sync:browse',
   /** 同步链路总览（来源 → 图库 → 远端） */
   syncSummary: 'sync:summary',
+  /** 备份地址列表（可以配多个） */
+  syncTargets: 'sync:targets',
   /** 统一任务视图：四个任务的状态与取消 */
   jobsList: 'jobs:list',
   jobsCancel: 'jobs:cancel',
@@ -174,6 +177,7 @@ export const EXPOSED_METHODS = [
   'pickRemoteFolder',
   'browseRemote',
   'getSyncSummary',
+  'listRemoteTargets',
   'listJobs',
   'cancelJob',
   'disconnectRemote',
@@ -257,6 +261,7 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   pickRemoteFolder: IPC_CHANNELS.syncPickFolder,
   browseRemote: IPC_CHANNELS.syncBrowse,
   getSyncSummary: IPC_CHANNELS.syncSummary,
+  listRemoteTargets: IPC_CHANNELS.syncTargets,
   listJobs: IPC_CHANNELS.jobsList,
   cancelJob: IPC_CHANNELS.jobsCancel,
   disconnectRemote: IPC_CHANNELS.syncDisconnect,
@@ -428,10 +433,13 @@ export interface RendererApi {
   browseRemote(payload: BrowseRemotePayload): Promise<IpcResult<RemoteBrowseDto>>
   /** 同步链路总览：来源 → 图库 → 远端，一眼看清哪边到哪边 */
   getSyncSummary(): Promise<IpcResult<SyncSummaryDto>>
+  /** 备份地址列表：本机盘 / NAS 共享 / WebDAV 可以同时存在多个 */
+  listRemoteTargets(): Promise<IpcResult<RemoteTargetDto[]>>
   /** 统一任务视图 */
   listJobs(): Promise<IpcResult<JobSummaryDto[]>>
   cancelJob(payload: { readonly id: string }): Promise<IpcResult<JobSummaryDto[]>>
-  disconnectRemote(): Promise<IpcResult<RemoteStateDto>>
+  /** 不传 id 时断开第一个；传 id 只断开那一个 */
+  disconnectRemote(payload?: { readonly remoteId?: string }): Promise<IpcResult<RemoteStateDto>>
   getRemoteState(): Promise<IpcResult<RemoteStateDto>>
   startUpload(payload?: UploadStartPayload): Promise<IpcResult<UploadSummaryDto>>
   cancelUpload(): Promise<IpcResult<UploadStatusDto>>

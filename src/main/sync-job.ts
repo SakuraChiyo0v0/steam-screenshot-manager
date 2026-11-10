@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { BrowserWindow } from 'electron'
 import { AppError } from '@shared/errors'
 import { IPC_EVENTS } from '@shared/ipc'
@@ -18,7 +19,7 @@ import type {
   UploadStatusDto,
   UploadSummaryDto
 } from '@shared/types'
-import { readSettings } from '@core/settings/settings-store'
+import { readSettings, writeSettings } from '@core/settings/settings-store'
 import {
   deleteCredential,
   isCredentialStorageAvailable,
@@ -84,21 +85,27 @@ interface RemoteRow {
   lastCheckStatus: string | null
 }
 
-function readRemoteRow(): RemoteRow | null {
+function listRemoteRows(): RemoteRow[] {
   const { database } = getAppContext()
-  const row = database.db
+  return database.db
     .prepare(
       `SELECT remote_id AS remoteId, library_id AS libraryId, base_url AS baseUrl, root_path AS rootPath,
               credential_ref AS credentialRef, kind, format_version AS formatVersion,
               last_check_at AS lastCheckAt, last_check_status AS lastCheckStatus
-         FROM remotes ORDER BY created_at LIMIT 1`
+         FROM remotes ORDER BY created_at`
     )
-    .get() as RemoteRow | undefined
-  return row ?? null
+    .all() as unknown as RemoteRow[]
 }
 
-function requireRemote(): RemoteRow {
-  const row = readRemoteRow()
+/** 单个备份目标（按 id）；不给 id 时取第一个。 */
+function readRemoteRow(remoteId?: string): RemoteRow | null {
+  const rows = listRemoteRows()
+  if (!remoteId) return rows[0] ?? null
+  return rows.find((row) => row.remoteId === remoteId) ?? null
+}
+
+function requireRemote(remoteId?: string): RemoteRow {
+  const row = readRemoteRow(remoteId)
   if (!row) {
     throw new AppError('IPC_INVALID_INPUT', '尚未连接远端存储')
   }
@@ -131,8 +138,8 @@ function buildStore(row: RemoteRow): RemoteClient {
 }
 
 /** 上传与恢复共用的入口：取当前已连接的远端（WebDAV 或文件夹）。 */
-export function openRemote(): { store: RemoteClient; remoteId: string; libraryId: string } {
-  const row = requireRemote()
+export function openRemote(remoteId?: string): { store: RemoteClient; remoteId: string; libraryId: string } {
+  const row = requireRemote(remoteId)
   return { store: buildStore(row), remoteId: row.remoteId, libraryId: row.libraryId }
 }
 
@@ -200,6 +207,60 @@ export async function browseRemote(input: {
  * remote_objects=远端各状态有多少。界面按「来源 → 图库 → 远端」排开显示，
  * 用户不用再猜某个数字是哪一边的。
  */
+
+/** 一台机器可以有多个备份地址：本机盘、NAS 共享、WebDAV 混搭。 */
+
+/**
+ * 内部工作副本目录（界面上不再暴露）。
+ *
+ * 备份需要一份稳定的本地原图（原图可能被 Steam 删、也可能是别的盘），
+ * 所以应用自己维护一个图库目录：用户不选就用默认位置，选了就用选的。
+ */
+export function ensureLibraryRoot(): string {
+  const { database, paths } = getAppContext()
+  const settings = readSettings(database.db)
+  if (settings.libraryRoot && settings.libraryRoot.trim().length > 0) {
+    return settings.libraryRoot
+  }
+  const fallback = join(paths.dataDir, 'library')
+  writeSettings(database.db, { libraryRoot: fallback })
+  return fallback
+}
+
+export function remoteTargets(): {
+  remoteId: string
+  kind: RemoteKind
+  baseUrl: string
+  libraryId: string
+  lastCheckAt: string | null
+  lastCheckStatus: string | null
+  connected: boolean
+  verified: number
+  pending: number
+  failed: number
+}[] {
+  const { database, paths } = getAppContext()
+  return listRemoteRows().map((row) => {
+    const counts = remoteStatusCounts(database.db, row.remoteId)
+    const connected =
+      row.kind === 'folder'
+        ? row.lastCheckStatus !== 'disconnected'
+        : row.credentialRef.length > 0 && loadCredential(paths.dataDir, row.credentialRef) !== null
+    return {
+      remoteId: row.remoteId,
+      kind: row.kind,
+      baseUrl: row.baseUrl,
+      libraryId: row.libraryId,
+      lastCheckAt: row.lastCheckAt,
+      lastCheckStatus: row.lastCheckStatus,
+      connected,
+      verified: counts.verified,
+      pending: counts.pending,
+      failed: counts.failed
+    }
+  })
+}
+
 export function syncSummary(): SyncSummaryDto {
   const { database } = getAppContext()
   const settings = readSettings(database.db)
@@ -448,6 +509,9 @@ export async function connectRemote(input: {
     saveCredential(paths.dataDir, remoteId, { username: input.username, password: input.password })
   }
 
+  // 备份需要一份稳定的本地原图；用户没选过图库就自动落一个（内部用，界面不再暴露）
+  ensureLibraryRoot()
+
   return {
     remoteId,
     libraryId,
@@ -465,9 +529,9 @@ export async function connectRemote(input: {
  * 必须保留 remotes 行——remote_objects 以 remote_id 关联，
  * 删行会让"这台设备已经备份了哪些资产"的历史失联，重连后会被当成全部未备份而重复上传。
  */
-export function disconnectRemote(): RemoteStateDto {
+export function disconnectRemote(remoteId?: string): RemoteStateDto {
   const { database, paths } = getAppContext()
-  const row = readRemoteRow()
+  const row = readRemoteRow(remoteId)
   if (row) {
     deleteCredential(paths.dataDir, row.credentialRef)
     database.db
@@ -512,11 +576,18 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
   const { database, device } = getAppContext()
   const settings = readSettings(database.db)
   if (!settings.libraryRoot) {
-    throw new AppError('LIB_PATH_INVALID', '尚未选择图库目录，请先归档再上传')
+    throw new AppError('LIB_PATH_INVALID', '还没有可备份的截图；先扫描一次来源')
   }
 
-  const row = requireRemote()
-  const client = buildStore(row)
+  // 备份地址可以有多个：本机盘、NAS 共享、WebDAV 混搭。逐个跑，互不影响。
+  const rows = listRemoteRows().filter((row) => {
+    if (row.kind === 'folder') return row.lastCheckStatus !== 'disconnected'
+    return row.credentialRef.length > 0
+  })
+  if (rows.length === 0) {
+    throw new AppError('IPC_INVALID_INPUT', '还没有连接任何备份地址')
+  }
+
   const startedAt = new Date().toISOString()
   const job = { cancelRequested: false }
   uploadJob = job
@@ -536,57 +607,90 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
   }
   broadcast(IPC_EVENTS.uploadProgress, uploadStatus)
 
+  const totals = { total: 0, verified: 0, uploaded: 0, failed: 0 }
+  let cancelled = false
+  let abortedByAuth = false
+  let lastError: AppError | null = null
+  const startedMs = Date.now()
+
   try {
-    const result = await uploadAssets(database.db, {
-      remoteId: row.remoteId,
-      libraryId: row.libraryId,
-      deviceId: device.deviceId,
-      libraryRoot: settings.libraryRoot,
-      client,
-      forceRetry: input.forceRetry === true,
-      onProgress: (progress) => {
-        uploadStatus = {
-          running: true,
-          processed: progress.processed,
-          total: progress.total,
-          currentFile: progress.currentFile,
-          verified: progress.verified,
-          uploaded: progress.uploaded,
-          failed: progress.failed,
-          startedAt,
-          finishedAt: null,
-          errorCode: null,
-          errorMessage: null
-        }
-        broadcast(IPC_EVENTS.uploadProgress, uploadStatus)
-      },
-      shouldCancel: () => job.cancelRequested
-    })
+    for (const row of rows) {
+      if (job.cancelRequested) {
+        cancelled = true
+        break
+      }
+      let client: RemoteClient
+      try {
+        client = buildStore(row)
+      } catch (error) {
+        // 单个目标不可用（盘没挂上、凭据失效）不应中断其它目标
+        lastError = error instanceof AppError ? error : null
+        continue
+      }
+      const base = { ...totals }
+      const result = await uploadAssets(database.db, {
+        remoteId: row.remoteId,
+        libraryId: row.libraryId,
+        deviceId: device.deviceId,
+        libraryRoot: settings.libraryRoot,
+        client,
+        forceRetry: input.forceRetry === true,
+        onProgress: (progress) => {
+          uploadStatus = {
+            running: true,
+            processed: base.verified + progress.processed,
+            total: progress.total === null ? null : base.total + progress.total,
+            currentFile: progress.currentFile,
+            verified: base.verified + progress.verified,
+            uploaded: base.uploaded + progress.uploaded,
+            failed: base.failed + progress.failed,
+            startedAt,
+            finishedAt: null,
+            errorCode: null,
+            errorMessage: null
+          }
+          broadcast(IPC_EVENTS.uploadProgress, uploadStatus)
+        },
+        shouldCancel: () => job.cancelRequested
+      })
+      totals.total += result.total
+      totals.verified += result.verified
+      totals.uploaded += result.uploaded
+      totals.failed += result.failed
+      if (result.cancelled) cancelled = true
+      if (result.abortedByAuth) {
+        abortedByAuth = true
+        break
+      }
+    }
 
     uploadStatus = {
       ...uploadStatus,
       running: false,
       finishedAt: new Date().toISOString(),
-      total: result.total,
-      processed: result.verified + result.failed,
-      verified: result.verified,
-      uploaded: result.uploaded,
-      failed: result.failed,
-      errorCode: result.abortedByAuth ? 'DAV_AUTH' : null,
-      errorMessage: result.abortedByAuth ? '远端拒绝认证，本轮已停止' : null
+      total: totals.total,
+      processed: totals.verified + totals.failed,
+      verified: totals.verified,
+      uploaded: totals.uploaded,
+      failed: totals.failed,
+      errorCode: abortedByAuth ? 'DAV_AUTH' : lastError?.code ?? null,
+      errorMessage: abortedByAuth
+        ? '远端拒绝认证，本轮已停止'
+        : lastError?.detail ?? lastError?.message ?? null
     }
     broadcast(IPC_EVENTS.uploadProgress, uploadStatus)
 
     return {
-      total: result.total,
-      verified: result.verified,
-      uploaded: result.uploaded,
-      failed: result.failed,
-      cancelled: result.cancelled,
-      abortedByAuth: result.abortedByAuth,
-      durationMs: result.durationMs,
-      libraryId: row.libraryId
+      total: totals.total,
+      verified: totals.verified,
+      uploaded: totals.uploaded,
+      failed: totals.failed,
+      cancelled,
+      abortedByAuth,
+      durationMs: Date.now() - startedMs,
+      libraryId: rows[0]!.libraryId
     }
+
   } catch (error) {
     const code = error instanceof AppError ? error.code : 'APP_INTERNAL'
     const message = error instanceof Error ? error.message : String(error)

@@ -25,16 +25,15 @@ import {
 import { parseInlineMarkdown, parseReleaseNotes, type InlineToken } from '@shared/changelog'
 import type {
   AccountSummaryDto,
-  ArchiveStatusDto,
   DiscoveredRootDto,
   GalleryAssetDto,
   GalleryGameDto,
   CapabilityItemDto,
-  LibraryCopyStateDto,
   LibraryStatsDto,
   PreviewStatsDto,
   SteamKeyStatusDto,
   RemoteStateDto,
+  RemoteTargetDto,
   SyncSummaryDto,
   UploadStatusDto,
   RegisteredSourceDto,
@@ -191,6 +190,7 @@ export function App() {
   const [toast, setToast] = useState('')
   const [remoteState, setRemoteState] = useState<RemoteStateDto | null>(null)
   const [syncSummary, setSyncSummary] = useState<SyncSummaryDto | null>(null)
+  const [targets, setTargets] = useState<RemoteTargetDto[]>([])
   const [uploadStatus, setUploadStatus] = useState<UploadStatusDto | null>(null)
   const [connectForm, setConnectForm] = useState<{
     kind: 'webdav' | 'folder'
@@ -205,9 +205,7 @@ export function App() {
   const [capabilities, setCapabilities] = useState<CapabilityItemDto[] | null>(null)
   const [diagnostics, setDiagnostics] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
-  const [copyState, setCopyState] = useState<LibraryCopyStateDto | null>(null)
   const [previewState, setPreviewState] = useState<PreviewStatsDto | null>(null)
-  const [archiveStatus, setArchiveStatus] = useState<ArchiveStatusDto | null>(null)
 
   /**
    * 请求序号：每次刷新或追加都自增，只有序号仍是最新的响应才允许写入状态。
@@ -324,14 +322,6 @@ export function App() {
     return () => api.offScanProgress()
   }, [])
 
-  /** 归档进度事件订阅。 */
-  useEffect(() => {
-    const api = getApi()
-    if (!api) return
-    api.onArchiveProgress((status: ArchiveStatusDto) => setArchiveStatus(status))
-    return () => api.offArchiveProgress()
-  }, [])
-
   /**
    * 预览就绪事件：这张图之前可能因为还没有预览而回退到原图，
    * 现在换成清晰且更轻的预览（只触发一次，因为预览只会生成一次）。
@@ -360,12 +350,14 @@ export function App() {
   const refreshRemoteState = useCallback(async () => {
     if (!hasApi) return
     try {
-      const [state, summary] = await Promise.all([
+      const [state, summary, list] = await Promise.all([
         call((api) => api.getRemoteState()),
-        call((api) => api.getSyncSummary())
+        call((api) => api.getSyncSummary()),
+        call((api) => api.listRemoteTargets())
       ])
       setRemoteState(state)
       setSyncSummary(summary)
+      setTargets(list)
     } catch {
       /* 远端状态读取失败不影响其它功能 */
     }
@@ -375,18 +367,6 @@ export function App() {
     void refreshRemoteState()
   }, [refreshRemoteState])
 
-  const refreshCopyState = useCallback(async () => {
-    if (!hasApi) return
-    try {
-      setCopyState(await call((api) => api.getLibraryCopyState()))
-    } catch {
-      /* 图库状态读取失败不影响其它功能 */
-    }
-  }, [hasApi])
-
-  useEffect(() => {
-    void refreshCopyState()
-  }, [refreshCopyState])
 
   const refreshPreviewState = useCallback(async () => {
     if (!hasApi) return
@@ -774,6 +754,16 @@ export function App() {
     }
   }
 
+  const removeTarget = async (remoteId: string) => {
+    try {
+      await call((api) => api.disconnectRemote({ remoteId }))
+      await refreshRemoteState()
+      setToast('已移除这个备份地址，远端已有的备份不受影响。')
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
+  }
+
   const disconnectRemoteAction = async () => {
     try {
       setRemoteState(await call((api) => api.disconnectRemote()))
@@ -808,29 +798,7 @@ export function App() {
     }
   }
 
-  const startArchive = async () => {
-    setToast('归档已开始，可以继续浏览界面。')
-    try {
-      const summary = await call((api) => api.startArchive({}))
-      setToast(
-        `归档完成：计划 ${summary.total}，新复制 ${summary.copied}，已存在 ${summary.skipped}，失败 ${summary.failed}，耗时 ${(summary.durationMs / 1000).toFixed(1)} 秒${summary.cancelled ? '（已取消）' : ''}。`
-      )
-      await refreshCopyState()
-      await refreshLibrary()
-    } catch (error) {
-      setToast(errorMessage(error))
-      await refreshCopyState()
-    }
-  }
 
-  const cancelArchive = async () => {
-    try {
-      setArchiveStatus(await call((api) => api.cancelArchive()))
-      setToast('已请求取消归档，当前文件处理完后停止。')
-    } catch (error) {
-      setToast(errorMessage(error))
-    }
-  }
 
   const [appVersion, setAppVersion] = useState('—')
   const [updateState, setUpdateState] = useState<UpdateStateDto | null>(null)
@@ -881,65 +849,8 @@ export function App() {
     }
   }
 
-  const [importBusy, setImportBusy] = useState(false)
-  const [importNote, setImportNote] = useState<string | null>(null)
 
-  /** 重建索引的进度由主进程推送（几千个说明文件要读一会儿）。 */
-  useEffect(() => {
-    const api = getApi()
-    if (!api) return
-    api.onImportProgress((progress) => {
-      setImportNote(
-        `重建索引：${progress.processed} / ${progress.total}${progress.currentFile ? ` · ${progress.currentFile}` : ''}`
-      )
-    })
-    return () => api.offImportProgress()
-  }, [])
 
-  const runImportLibrary = async () => {
-    setImportBusy(true)
-    setImportNote('正在读取图库里的说明文件…')
-    try {
-      const summary = await call((api) => api.importLibraryIndex({}))
-      setImportNote(
-        `已重建索引：读 ${summary.scanned} 份说明文件，新增 ${summary.imported} 张，索引里已有 ${summary.skipped} 张，失败 ${summary.failed} 张；当前 ${summary.games} 款游戏 · ${summary.accounts} 个账号，耗时 ${(summary.durationMs / 1000).toFixed(1)} 秒。`
-      )
-      if (summary.failures.length > 0) {
-        setToast(`部分文件没能导入，第一条：${summary.failures[0]}`)
-      }
-      await refreshLibrary()
-      await refreshMeta()
-      await refreshCopyState()
-      await refreshPreviewState()
-    } catch (error) {
-      setImportNote(null)
-      setToast(errorMessage(error))
-    } finally {
-      setImportBusy(false)
-    }
-  }
-
-  const reconcileLibrary = async () => {
-    try {
-      const result = await call((api) => api.reconcileLibrary())
-      setToast(
-        `对账完成：检查 ${result.checked}，副本缺失 ${result.missing}，清理临时文件 ${result.stagingCleaned}。`
-      )
-      await refreshCopyState()
-    } catch (error) {
-      setToast(errorMessage(error))
-    }
-  }
-
-  const pickLibraryRoot = async () => {
-    try {
-      const state = await call((api) => api.pickLibraryRoot())
-      setSettings((current) => (current ? { ...current, libraryRoot: state.root } : current))
-      setToast(state.root ? `已选择图库目录：${state.root}` : '已取消选择。')
-    } catch (error) {
-      setToast(errorMessage(error))
-    }
-  }
 
   const remoteConnected = remoteState?.connected === true
 
@@ -966,20 +877,13 @@ export function App() {
       action: () => void openSources()
     },
     {
-      id: 'library',
-      title: '选一个图库目录并归档',
-      detail: settings?.libraryRoot
-        ? `已归档 ${copyState?.archived ?? 0} / ${copyState?.assets ?? 0} 张`
-        : '图库是独立副本：来源删除也不影响它，可以放在 NAS 上',
-      done: Boolean(settings?.libraryRoot) && (copyState?.assets ?? 0) > 0 && copyState?.archived === copyState?.assets,
-      actionLabel: settings?.libraryRoot ? '开始归档' : '选择图库目录',
-      action: () => void (settings?.libraryRoot ? startArchive() : pickLibraryRoot())
-    },
-    {
       id: 'remote',
-      title: '连一个远端做备份',
-      detail: remoteConnected ? `已备份 ${remoteState?.verified ?? 0} / ${remoteState?.assets ?? 0} 张` : 'WebDAV 或 NAS 上的一个文件夹都行',
-      done: remoteConnected && (remoteState?.pending ?? 0) === 0 && (remoteState?.assets ?? 0) > 0,
+      title: '配置备份地址',
+      detail:
+        targets.length > 0
+          ? `${targets.length} 个地址 · 已备份 ${targets.reduce((sum, target) => sum + target.verified, 0)} 张`
+          : '本机盘、NAS 共享或 WebDAV 都行，可以配多个',
+      done: targets.length > 0 && targets.every((target) => target.pending === 0),
       actionLabel: '去设置',
       action: () => setPage('settings')
     }
@@ -987,7 +891,6 @@ export function App() {
 
   const selectedScanSource = sources.find((source) => source.sourceId === scanSourceId) ?? null
   const scanRunning = scanStatus?.running === true
-  const archiveRunning = archiveStatus?.running === true
   const uploadRunning = uploadStatus?.running === true
   const scanProgressLabel = scanStatus
     ? scanStatus.total === null
@@ -1498,9 +1401,12 @@ export function App() {
                       <span className="dir-badge to">远端备份</span>
                     </h2>
                     <p>
-                      {remoteState?.baseUrl}
-                      {remoteState?.kind === 'folder' ? '（文件夹）' : '（WebDAV）'}
-                    </p>
+                    {targets.length > 1
+                      ? `${targets.length} 个备份地址`
+                      : `${remoteState?.baseUrl ?? ''}${
+                          remoteState?.kind === 'folder' ? '（文件夹）' : '（WebDAV）'
+                        }`}
+                  </p>
                   </div>
                   {uploadRunning ? (
                     <button onClick={() => void cancelUpload()}>停止</button>
@@ -1677,11 +1583,38 @@ export function App() {
             <section className="settings-card">
               <div className="section-heading">
                 <div>
-                  <h2>远端存储</h2>
-                  <p>远端可以是 WebDAV 服务，也可以就是一个文件夹（NAS 共享、已映射的网络盘）。</p>
+                  <h2>备份地址</h2>
+                  <p>可以配多个：本机盘、NAS 共享、WebDAV 都行，备份会一次写到全部地址。</p>
                 </div>
-                <span className="demo-pill">{remoteConnected ? '已连接' : '未连接'}</span>
+                <span className="demo-pill">{targets.length > 0 ? `${targets.length} 个` : '未配置'}</span>
               </div>
+              {targets.length > 0 && (
+                <div className="target-list">
+                  {targets.map((target) => (
+                    <div className="target-row" key={target.remoteId}>
+                      <span className="target-kind">
+                        {target.kind === 'folder' ? '文件夹' : 'WebDAV'}
+                      </span>
+                      <span className="target-url" title={target.baseUrl}>
+                        {target.baseUrl}
+                      </span>
+                      <span className="muted small">
+                        已备份 {target.verified}
+                        {target.pending > 0 ? ` · 待 ${target.pending}` : ''}
+                        {target.failed > 0 ? ` · 失败 ${target.failed}` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label="移除这个备份地址"
+                        onClick={() => void removeTarget(target.remoteId)}
+                      >
+                        <XIcon size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="tabs">
                 <button
                   type="button"
@@ -1816,74 +1749,6 @@ export function App() {
               ) : null}
             </section>
 
-            <section className="settings-card">
-              <div className="section-heading">
-                <div>
-                  <h2>本地图库</h2>
-                  <p>把来源截图复制进独立图库；来源只读，不会被修改或移动。</p>
-                </div>
-                <HardDrivesIcon size={23} />
-              </div>
-              <div className="directory-field">
-                <FolderOpenIcon size={20} />
-                <span>{settings?.libraryRoot ?? '尚未选择图库目录'}</span>
-                <button onClick={() => void pickLibraryRoot()}>选择目录</button>
-              </div>
-              {copyState ? (
-                <p className="panel-note">
-                  已归档 {copyState.archived} / {copyState.assets} 张
-                  {copyState.missing > 0 ? ` · ${copyState.missing} 个副本当前缺失` : ''}
-                  {copyState.assets > 0 && copyState.archived === copyState.assets
-                    ? ' · 全部已归档'
-                    : ''}
-                </p>
-              ) : null}
-              {archiveRunning ? (
-                <div className="error-banner inline" role="status">
-                  <ArrowsClockwiseIcon size={20} />
-                  <div>
-                    <strong>正在归档</strong>
-                    <p>
-                      {archiveStatus?.total === null
-                        ? `正在统计（已处理 ${archiveStatus?.processed ?? 0}）`
-                        : `${archiveStatus?.processed ?? 0} / ${archiveStatus?.total ?? 0}`}
-                      {archiveStatus?.currentFile ? ` · ${archiveStatus.currentFile}` : ''}
-                      {archiveStatus?.failed ? ` · 失败 ${archiveStatus.failed}` : ''}
-                    </p>
-                  </div>
-                  <button onClick={() => void cancelArchive()}>取消</button>
-                </div>
-              ) : (
-                <div className="form-footer">
-                  <span>归档只新增副本；重复执行不会重复复制。</span>
-                  <div className="actions">
-                    <button onClick={() => void reconcileLibrary()}>对账</button>
-                    <button
-                      className="primary"
-                      disabled={!settings?.libraryRoot}
-                      onClick={() => void startArchive()}
-                    >
-                      开始归档
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div className="form-footer">
-                <span>
-                  换机器、或图库就放在 NAS 上时：索引是空的，但 originals/ 旁边的 metadata/ 已经带着
-                  全部信息，可以直接按它重建。
-                </span>
-                <div className="actions">
-                  <button
-                    disabled={!settings?.libraryRoot || importBusy}
-                    onClick={() => void runImportLibrary()}
-                  >
-                    {importBusy ? '重建中…' : '从图库目录重建索引'}
-                  </button>
-                </div>
-              </div>
-              {importNote ? <p className="panel-note">{importNote}</p> : null}
-            </section>
 
             <section className="settings-card">
               <div className="section-heading">
