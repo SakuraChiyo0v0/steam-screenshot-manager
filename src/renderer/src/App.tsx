@@ -22,6 +22,7 @@ import {
   TrashIcon,
   ArrowClockwiseIcon
 } from '@phosphor-icons/react'
+import { parseInlineMarkdown, parseReleaseNotes, type InlineToken } from '@shared/changelog'
 import type {
   AccountSummaryDto,
   ArchiveStatusDto,
@@ -87,6 +88,36 @@ function readTheme(): Theme {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * 更新日志的行内 Markdown（粗体 / 行内代码）→ React 节点。
+ *
+ * 更新内容是给 Release 正文用的 Markdown；直接当纯文本显示会露出 `**修复……**` 和一串反引号。
+ * 这里只认两种标记，别的一律当普通文本（不吞字符、不解析链接）。
+ */
+function InlineTokens({ tokens }: { tokens: readonly InlineToken[] }) {
+  return (
+    <>
+      {tokens.map((token, index) => {
+        if (token.kind === 'code') {
+          return (
+            <code className="update-notes__code" key={index}>
+              {token.text}
+            </code>
+          )
+        }
+        if (token.kind === 'strong') {
+          return (
+            <strong key={index}>
+              <InlineTokens tokens={token.tokens} />
+            </strong>
+          )
+        }
+        return <span key={index}>{token.text}</span>
+      })}
+    </>
+  )
 }
 
 export function App() {
@@ -1944,7 +1975,20 @@ export function App() {
               {updateState?.releaseNotes && updateState.phase !== 'up-to-date' ? (
                 <details className="update-notes">
                   <summary>本版更新内容</summary>
-                  <pre>{updateState.releaseNotes}</pre>
+                  <div className="update-notes__body">
+                    {parseReleaseNotes(updateState.releaseNotes).map((group, groupIndex) => (
+                      <div className="update-notes__group" key={groupIndex}>
+                        {group.title ? <strong>{group.title}</strong> : null}
+                        <ul>
+                          {group.items.map((item, itemIndex) => (
+                            <li key={itemIndex}>
+                              <InlineTokens tokens={parseInlineMarkdown(item)} />
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
                 </details>
               ) : null}
             </section>

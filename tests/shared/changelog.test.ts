@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { compareVersions, findEntry, formatEntry, parseChangelog } from '@shared/changelog'
+import {
+  compareVersions,
+  findEntry,
+  formatEntry,
+  parseChangelog,
+  parseInlineMarkdown,
+  parseReleaseNotes
+} from '@shared/changelog'
 
 const SAMPLE = `# 更新日志
 
@@ -58,5 +65,61 @@ describe('CHANGELOG 解析', () => {
     expect(compareVersions('0.7.0', '0.6.0')).toBeGreaterThan(0)
     expect(compareVersions('v0.7.0', '0.7.0')).toBe(0)
     expect(compareVersions('0.7.10', '0.7.9')).toBeGreaterThan(0)
+  })
+})
+
+describe('行内 Markdown（更新内容的富文本）', () => {
+  it('粗体里套行内代码', () => {
+    expect(parseInlineMarkdown('**修复网关 `/webdav` 前缀模式**：只把前缀剥掉了')).toEqual([
+      {
+        kind: 'strong',
+        tokens: [
+          { kind: 'text', text: '修复网关 ' },
+          { kind: 'code', text: '/webdav' },
+          { kind: 'text', text: ' 前缀模式' }
+        ]
+      },
+      { kind: 'text', text: '：只把前缀剥掉了' }
+    ])
+  })
+
+  it('纯文本原样返回；未闭合标记不吞字符', () => {
+    expect(parseInlineMarkdown('普通一句话')).toEqual([{ kind: 'text', text: '普通一句话' }])
+    expect(parseInlineMarkdown('**没闭合')).toEqual([{ kind: 'text', text: '**没闭合' }])
+    expect(parseInlineMarkdown('没闭合 `')).toEqual([{ kind: 'text', text: '没闭合 `' }])
+  })
+
+  it('行内代码里的 ** 不当粗体', () => {
+    expect(parseInlineMarkdown('`a**b`')).toEqual([{ kind: 'code', text: 'a**b' }])
+  })
+})
+
+describe('发布正文解析（latest.yml 的 releaseNotes）', () => {
+  it('按分组标题与小标题拆开，折行接上', () => {
+    const notes = ['**新增**', '', '- 第一条', '- 第二条', '  折行接上', '', '**修复**', '', '- 修了一个错'].join('\n')
+    expect(parseReleaseNotes(notes)).toEqual([
+      { title: '新增', items: ['第一条', '第二条 折行接上'] },
+      { title: '修复', items: ['修了一个错'] }
+    ])
+  })
+
+  it('没有分组标题时归到一个无标题分组；空正文给空数组', () => {
+    expect(parseReleaseNotes('- 只有条目')).toEqual([{ title: '', items: ['只有条目'] }])
+    expect(parseReleaseNotes('')).toEqual([])
+  })
+
+  it('formatEntry 的输出能被 parseReleaseNotes 读回来（带分组标题的形状）', () => {
+    const entry = {
+      version: '1.0.0',
+      date: '',
+      groups: [
+        { title: '新增', items: ['a', 'b'] },
+        { title: '修复', items: ['c'] }
+      ]
+    }
+    expect(parseReleaseNotes(formatEntry(entry))).toEqual([
+      { title: '新增', items: ['a', 'b'] },
+      { title: '修复', items: ['c'] }
+    ])
   })
 })

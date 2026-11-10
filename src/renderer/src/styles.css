@@ -116,6 +116,8 @@ p {
 img {
   display: block;
   max-width: 100%;
+  /* 拖图不该拖出幽灵缩略图，也不该顺手在页面上开始框选 */
+  -webkit-user-drag: none;
 }
 .muted {
   color: var(--muted);
@@ -883,6 +885,11 @@ dialog::backdrop {
   display: flex;
   min-height: 0;
 }
+.shot-grid,
+.game-grid {
+  /* 在网格上横向拖动不该顺手选中一片卡片文字 */
+  user-select: none;
+}
 .image-stage {
   position: relative;
   flex: 1;
@@ -890,6 +897,9 @@ dialog::backdrop {
   min-height: 0;
   background: var(--stage);
   padding: 30px 66px;
+  /* 在图上拖动不该变成"选中这张图"：那层高亮是 Chromium 的选区蓝，看着像是图坏了。
+     对照图信息面板（.image-details）仍可正常选中复制。 */
+  user-select: none;
 }
 .image-viewport {
   width: 100%;
@@ -903,6 +913,8 @@ dialog::backdrop {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .image-viewport.actual-size {
   display: block;
@@ -975,6 +987,7 @@ dialog::backdrop {
   gap: 12px;
   overflow-x: auto;
   padding: 5px;
+  user-select: none;
 }
 .filmstrip button {
   position: relative;
@@ -1586,13 +1599,38 @@ dialog::backdrop {
   opacity: 0.85;
 }
 
-.update-notes pre {
+.update-notes__body {
   margin: 8px 0 0;
-  max-height: 220px;
+  max-height: 260px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+  display: grid;
+  gap: 10px;
   font-size: 12px;
-  line-height: 1.6;
-  opacity: 0.9;
+  line-height: 1.65;
+  opacity: 0.92;
+}
+
+.update-notes__group > strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.update-notes__group ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+/* 行内代码：路径、文件名（/webdav、req.url 之类） */
+.update-notes__code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--raised);
+  font-family: ui-monospace, Consolas, 'Courier New', monospace;
+  font-size: 0.94em;
+  overflow-wrap: anywhere;
 }

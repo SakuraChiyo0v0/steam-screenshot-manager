@@ -107,3 +107,94 @@ export function formatEntry(entry: ChangelogEntry): string {
   }
   return blocks.join('\n\n')
 }
+
+/**
+ * 更新日志里用到的**行内 Markdown 子集**：粗体与行内代码。
+ *
+ * CHANGELOG 是给 Release 正文用的 Markdown；应用里如果整段当纯文本显示，
+ * 用户看到的就是 `**修复……**` 和一串反引号。这里只认发布正文实际会用到的两种标记，
+ * 不引入 Markdown 引擎：
+ * - 反引号包住的行内代码不参与其它标记（代码里的 `**` 不会被当成粗体）；
+ * - 粗体里还能套行内代码（"**修复 `/webdav` 前缀模式……**" 这种）。
+ * 认不出来的标记原样留作文本，不吞字符。
+ */
+export type InlineToken =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'code'; readonly text: string }
+  | { readonly kind: 'strong'; readonly tokens: readonly InlineToken[] }
+
+export function parseInlineMarkdown(text: string): InlineToken[] {
+  const tokens: InlineToken[] = []
+  let buffer = ''
+  const flush = (): void => {
+    if (buffer.length > 0) {
+      tokens.push({ kind: 'text', text: buffer })
+      buffer = ''
+    }
+  }
+
+  let index = 0
+  while (index < text.length) {
+    if (text[index] === '`') {
+      const end = text.indexOf('`', index + 1)
+      if (end > index + 1) {
+        flush()
+        tokens.push({ kind: 'code', text: text.slice(index + 1, end) })
+        index = end + 1
+        continue
+      }
+    }
+    if (text.startsWith('**', index)) {
+      const end = text.indexOf('**', index + 2)
+      if (end > index + 2) {
+        flush()
+        tokens.push({ kind: 'strong', tokens: parseInlineMarkdown(text.slice(index + 2, end)) })
+        index = end + 2
+        continue
+      }
+    }
+    buffer += text[index]
+    index += 1
+  }
+  flush()
+  return tokens
+}
+
+/**
+ * 更新源给的发布正文（latest.yml 的 releaseNotes）→ 分组列表。
+ *
+ * 与 formatEntry 对称：分组标题是 `**分组名**` 单独一行，条目是 "- " 开头，
+ * 折行的续行接到上一条后面。应用里按分组渲染，而不是整段塞进 <pre>。
+ *
+ * 已知边界：formatEntry 不给"无标题分组"写分隔标记，所以「有标题分组 + 无标题分组」
+ * 混排时，后一组的条目会被并进前一组。发布正文不会是这个形状（CHANGELOG 里要么有 ### 分组，
+ * 要么整节都不分组），这里不做额外推断。
+ */
+export function parseReleaseNotes(markdown: string): ChangelogGroup[] {
+  const groups: { title: string; items: string[] }[] = []
+  let current: { title: string; items: string[] } | undefined
+
+  for (const raw of markdown.split(/\r?\n/)) {
+    const line = raw.trimEnd()
+    const groupHeading = /^\*\*(.+)\*\*$/.exec(line.trim())
+    if (groupHeading) {
+      current = { title: groupHeading[1]!.trim(), items: [] }
+      groups.push(current)
+      continue
+    }
+    const item = /^\s*[-*]\s+(.*)$/.exec(line)
+    if (item) {
+      if (!current) {
+        current = { title: '', items: [] }
+        groups.push(current)
+      }
+      current.items.push(item[1]!.trim())
+      continue
+    }
+    if (line.trim().length > 0 && current && current.items.length > 0) {
+      current.items[current.items.length - 1] += ` ${line.trim()}`
+    }
+  }
+
+  return groups.filter((group) => group.items.length > 0)
+}

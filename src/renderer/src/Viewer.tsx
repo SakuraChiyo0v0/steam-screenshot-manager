@@ -200,6 +200,7 @@ export function Viewer({
                   key={originalKey}
                   src={withRetryToken(shot.src, attempt)}
                   alt={shot.title}
+                  draggable={false}
                   onError={() => markFailed(originalKey)}
                 />
               )}
@@ -292,6 +293,7 @@ export function Viewer({
                     <img
                       src={withRetryToken(source, attempts[sourceKey] ?? 0)}
                       alt=""
+                      draggable={false}
                       onError={() => markFailed(sourceKey)}
                     />
                   ) : (
