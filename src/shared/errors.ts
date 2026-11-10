@@ -105,6 +105,8 @@ export function err(code: ErrorCode, detail?: string): Err {
 /** 核心层抛出的领域错误，携带稳定错误码。 */
 export class AppError extends Error {
   readonly code: ErrorCode
+  /** 原始细节（不含按错误码生成的那句固定文案），上层重抛时用它，免得前缀叠三层 */
+  readonly detail?: string
   /** 服务端要求的重试等待（如 429 的 Retry-After），毫秒 */
   readonly retryAfterMs?: number
 
@@ -113,6 +115,7 @@ export class AppError extends Error {
     super(detail ? `${meta.message}：${detail}` : meta.message)
     this.name = 'AppError'
     this.code = code
+    this.detail = detail
     if (options?.retryAfterMs !== undefined) {
       this.retryAfterMs = options.retryAfterMs
     }
@@ -126,7 +129,9 @@ export function isAppError(value: unknown): value is AppError {
 /** 把任意异常转换成统一错误返回，未识别的异常归为不可重试的内部错误。 */
 export function toErr(value: unknown): Err {
   if (isAppError(value)) {
-    return err(value.code, value.message)
+    // 用 detail 而不是 message：message 里已经带了错误码对应的那句文案，
+    // 再拼一次就成了「远端路径不可用：远端路径不可用：…」
+    return err(value.code, value.detail)
   }
   const detail = value instanceof Error ? value.message : String(value)
   return err('APP_INTERNAL', detail)

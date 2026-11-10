@@ -5,6 +5,7 @@ import { AppError } from '@shared/errors'
 import {
   DavClient,
   basicAuthHeader,
+  describeRootCandidates,
   classifyDavFailure,
   joinRemotePath,
   parseRetryAfterMs,
@@ -181,6 +182,62 @@ describe('入口探测与 404 诊断', () => {
       expect(client.absoluteUrl('steam-gallery-v1/x.json')).toBe(
         `${nas.url}/webdav/home/AmeChan/AmeBackup/${encodeURIComponent('Steam截图')}/steam-gallery-v1/x.json`
       )
+    } finally {
+      await nas.close()
+    }
+  })
+})
+
+describe('根目录不可写时给出候选地址', () => {
+  /** 假 NAS：根下只有 home / volume1，且根上不允许新建。 */
+  const startRootOnlyNas = async (): Promise<{ url: string; close: () => Promise<void> }> => {
+    const server = http.createServer((req, res) => {
+      if (req.method === 'PROPFIND') {
+        res.writeHead(207, { 'content-type': 'application/xml' })
+        res.end(
+          '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:">' +
+            '<D:response><D:href>/</D:href></D:response>' +
+            '<D:response><D:href>/home/</D:href></D:response>' +
+            '<D:response><D:href>/volume1/</D:href></D:response>' +
+            '</D:multistatus>'
+        )
+        return
+      }
+      // MKCOL 等写操作：根上不允许
+      res.writeHead(404, { 'content-type': 'text/plain' })
+      res.end('not found')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    return {
+      url,
+      close: async () => {
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
+    }
+  }
+
+  it('把根下已有目录列成可以直接填的地址', async () => {
+    const nas = await startRootOnlyNas()
+    try {
+      const client = new DavClient({ baseUrl: nas.url, rootPath: '', credential: { username: '', password: '' } })
+      const hint = await describeRootCandidates(client, nas.url)
+      expect(hint).toBeTruthy()
+      expect(hint).toContain(`${nas.url}/home`)
+      expect(hint).toContain(`${nas.url}/volume1`)
+      expect(hint).toContain('不允许在根上新建目录')
+    } finally {
+      await nas.close()
+    }
+  })
+
+  it('根目录建不了时，MKCOL 的错误里带完整 URL（供上层直接展示）', async () => {
+    const nas = await startRootOnlyNas()
+    try {
+      const client = new DavClient({ baseUrl: nas.url, rootPath: '', credential: { username: '', password: '' } })
+      await expect(client.createCollection('dav-probe-x')).rejects.toThrow(/创建目录返回 404/)
+      await expect(client.createCollection('dav-probe-x')).rejects.toThrow(`${nas.url}/dav-probe-x`)
     } finally {
       await nas.close()
     }

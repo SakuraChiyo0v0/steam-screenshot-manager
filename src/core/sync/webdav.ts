@@ -566,6 +566,8 @@ export interface CapabilityItem {
   readonly name: string
   readonly ok: boolean
   readonly detail: string
+  /** 失败项的原始错误：调用方要重抛时用它，避免把已带前缀的文案再包一层 */
+  readonly error?: unknown
 }
 
 /**
@@ -587,7 +589,8 @@ export async function probeCapabilities(
       items.push({
         name,
         ok: false,
-        detail: error instanceof Error ? error.message : String(error)
+        detail: error instanceof Error ? error.message : String(error),
+        error
       })
     }
   }
@@ -641,6 +644,41 @@ export async function probeCapabilities(
   }
 
   return items
+}
+
+/**
+ * 目标就是 WebDAV 根目录、而远端不允许在根上新建时，把根下已有的目录列成“可以直接填”的地址。
+ *
+ * 真实场景：NAS 的文件系统根（rclone 的 /host）通常只读，只有 home、volume1 这类共享目录能写。
+ * 用户把地址填到网关根（http://127.0.0.1:18006）时 MKCOL 会回 404，光看 404 猜不到要往下填一层。
+ */
+export async function describeRootCandidates(
+  client: RemoteClient,
+  address: string
+): Promise<string | null> {
+  let hrefs: readonly string[] = []
+  try {
+    const listing = await client.list('')
+    hrefs = listing.hrefs
+  } catch {
+    return null
+  }
+  const names = hrefs
+    .map((href) => href.split('/').filter((segment) => segment.length > 0).pop() ?? '')
+    .filter((name) => name.length > 0)
+  if (names.length === 0) {
+    return null
+  }
+  const base = address.replace(/\/+$/, '')
+  const lines = names
+    .slice(0, 5)
+    .map((name) => '  ' + base + '/' + name)
+    .join('\n')
+  return (
+    '这个地址是 WebDAV 的根目录，远端不允许在根上新建目录。请把地址填到根下某个已有目录，例如：\n' +
+    lines +
+    '\n（备份只会在该目录下建 steam-gallery-v1/<图库 ID>/，不会动目录里已有的文件）'
+  )
 }
 
 /** 常见 WebDAV 入口前缀。只填了主机名（或只填了网关域名）时按这些试一遍。 */
@@ -713,7 +751,7 @@ export async function probeDavBases(
         url: candidate.url,
         status: 0,
         ok: false,
-        detail: appError ? `${appError.code}：${appError.message}` : String(error)
+        detail: appError ? `${appError.code}：${appError.detail ?? appError.message}` : String(error)
       })
     }
   }

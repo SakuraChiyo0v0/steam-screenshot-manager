@@ -31,6 +31,7 @@ import {
 } from '@core/sync/library-remote'
 import {
   DavClient,
+  describeRootCandidates,
   probeCapabilities,
   probeDavBases,
   splitDavUrl,
@@ -251,6 +252,18 @@ export async function connectRemote(input: {
   const probe: CapabilityItem[] = await probeCapabilities(store, '')
   const mkcolProbe = probe.find((item) => item.name.startsWith('创建目录'))
   if (mkcolProbe && !mkcolProbe.ok) {
+    // 地址只填到 WebDAV 根、而远端不允许在根上建目录时，把根下已有目录列成可直接填的地址
+    const isDavRoot = input.kind === 'webdav' && splitDavUrl(address).rootPath.length === 0
+    if (isDavRoot) {
+      const hint = await describeRootCandidates(store, address)
+      if (hint) {
+        throw new AppError('DAV_PATH_INVALID', hint)
+      }
+    }
+    // 其余情况抛出探测时那个原始错误，不再二次包一层前缀
+    if (mkcolProbe.error instanceof AppError) {
+      throw mkcolProbe.error
+    }
     throw new AppError('DAV_PATH_INVALID', mkcolProbe.detail)
   }
   const capabilities = [...notes, ...probe]
