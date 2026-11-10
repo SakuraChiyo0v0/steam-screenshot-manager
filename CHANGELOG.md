@@ -1,5 +1,10 @@
 # 更新日志
 
+本文件记录每个版本的可见变化，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
+
+版本号遵循语义化版本：向后兼容的功能新增进次版本号，缺陷修复进修订号。
+**从 0.2.0 起，每次发布都同步更新本文件与 `package.json` 的 `version`，并在提交信息里带上版本号。**
+
 ## [0.7.0] - 2026-11-10
 
 ### 新增
@@ -15,15 +20,10 @@
 
 ### 验证
 
-- 新增 `tests/library/import.test.ts`（重建、幂等、复用已有 assetId、原图缺失/字段非法、目录不对、可取消）与 `tests/sync/webdav.test.ts` 的入口探测/404 诊断用例；全套 215 项通过，`tsc --noEmit` 两个 tsconfig 均干净，`electron-vite build` 通过。
+- 新增 `tests/library/import.test.ts`（重建、幂等、复用已有 assetId、原图缺失/字段非法、目录不对、可取消）与 `tests/sync/webdav.test.ts` 的入口探测/404 诊断用例；全套 222 项通过（含新增的 6 项导入测试与 7 项文件夹远端测试），`tsc --noEmit` 两个 tsconfig 均干净，`electron-vite build` 通过。
 - 真实数据：对 `Z:\home\AmeChan\AmeBackup\Steam截图`（6331 份说明文件、3.7 GB）跑完整重建，6331 张全部导入、0 失败、52 款游戏、2 个账号，耗时 209 秒（网络盘上每份说明文件一次往返，读阶段按 32 并发、原图存在性用按游戏目录的 readdir 代替逐文件 stat）。
 - 文件夹远端：`tests/sync/folder-remote.test.ts` 7 项（放对象/读回指纹、文本记录、列目录、越界拒绝、删除、能力探测复用、根目录检查）；在真实 NAS 挂载（`Z:\home\AmeChan\AmeBackup\ssm-远端测试`）上跑通探测全部通过 + 写读校验，测完删干净。
 - WebDAV 侧在现网 kura-server（`http://192.168.31.254:8898/webdav/home/AmeChan/AmeBackup/Steam截图`）上按应用的调用顺序完整跑通：逐级 MKCOL、PROPFIND、PUT/读回/DELETE、中文路径、建库与 `library.json` 读回。
-
-本文件记录每个版本的可见变化，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
-
-版本号遵循语义化版本：向后兼容的功能新增进次版本号，缺陷修复进修订号。
-**从 0.2.0 起，每次发布都同步更新本文件与 `package.json` 的 `version`，并在提交信息里带上版本号。**
 
 ## [0.6.0] - 2026-10-08
 
