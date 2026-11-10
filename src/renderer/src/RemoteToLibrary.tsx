@@ -3,9 +3,9 @@ import type { RemoteCatalogDto, RestoreStatusDto } from '@shared/types'
 import { call, getApi } from './api'
 
 /**
- * 远端 → 本机图库。
+ * 第 1 步：备份地址 → 本机临时副本。
  *
- * 单独成一个区块：以前它和「图库 → Steam」挤在同一张卡里，
+ * 单独成一个区块：以前它和「写回 Steam」挤在同一张卡里，
  * 两个方向用同一组按钮，很容易点错。这里只做"把远端的原图搬回本机"。
  */
 export function RemoteToLibrary({ onDone }: { onDone?: () => void }) {
@@ -50,11 +50,11 @@ export function RemoteToLibrary({ onDone }: { onDone?: () => void }) {
       <div className="section-heading">
         <div>
           <h2>
-            <span className="dir-badge from">远端</span>
+            <span className="dir-badge from">备份地址</span>
             <span className="dir-arrow">→</span>
-            <span className="dir-badge to">本机图库</span>
+            <span className="dir-badge to">Steam</span>
           </h2>
-          <p>换电脑后，先把远端备份的原图取回本机图库；取回来之后才能再恢复到 Steam。</p>
+          <p>换电脑或重装后，从备份里把原图恢复到 Steam：第 1 步取回原图，第 2 步写回 Steam。</p>
         </div>
       </div>
 
@@ -124,7 +124,7 @@ export function RemoteToLibrary({ onDone }: { onDone?: () => void }) {
                       })
                     }
                   >
-                    取回到本机图库
+                    第 1 步：取回原图
                   </button>
                 </div>
               </div>

@@ -742,7 +742,7 @@ export function App() {
       const target = result.kind === 'folder' ? '目录' : 'WebDAV'
       setToast(
         result.capabilities.every((item) => item.ok)
-          ? `已连接${target} ${result.baseUrl}，使用图库 ${result.libraryId}。`
+          ? `已连接${target} ${result.baseUrl}。`
           : `已连接${target}，但有 ${result.capabilities.filter((item) => !item.ok).length} 项能力测试未通过。`
       )
       await refreshRemoteState()
@@ -945,7 +945,7 @@ export function App() {
       <div className="empty-state">
         <DesktopIcon size={42} weight="light" />
         <h2>需要桌面环境</h2>
-        <p>浏览器预览没有桌面接口，图库与扫描不可用。</p>
+        <p>浏览器预览没有桌面接口，截图索引不可用。</p>
       </div>
     ) : viewState === 'loading' ? (
       <div className="empty-state">
@@ -957,7 +957,7 @@ export function App() {
       <div className="empty-state">
         <WarningCircleIcon size={42} weight="light" />
         <h2>查询失败</h2>
-        <p>{loadError ?? '无法读取图库数据。'}</p>
+        <p>{loadError ?? '无法读取截图索引。'}</p>
         <button onClick={() => void refreshLibrary()}>
           <ArrowClockwiseIcon size={16} />
           重试
@@ -1387,7 +1387,7 @@ export function App() {
                 </span>
                 <div>
                   <h2>还没有连接远端存储</h2>
-                  <p>先把图库准备到本机，再连一个 WebDAV 或 NAS 上的文件夹做备份。</p>
+                  <p>先扫描一次 Steam 来源，再配一个备份地址（本机盘、NAS 共享或 WebDAV）。</p>
                 </div>
                 <button onClick={() => navigate('settings')}>
                   去设置
@@ -1399,9 +1399,9 @@ export function App() {
                 <div className="section-heading">
                   <div>
                     <h2>
-                      <span className="dir-badge from">本机图库</span>
+                      <span className="dir-badge from">Steam 本地</span>
                       <span className="dir-arrow">→</span>
-                      <span className="dir-badge to">远端备份</span>
+                      <span className="dir-badge to">备份地址</span>
                     </h2>
                     <p>
                     {targets.length > 1
@@ -1717,8 +1717,7 @@ export function App() {
                     </p>
                   ) : (
                     <p className="panel-note">
-                      目录里会自己建 steam-gallery-v1/&lt;图库 ID&gt;/，放原图与记录；不写别的东西，
-                      也不改目录里已有的文件。想直接复用 NAS 上现成的图库，用设置里的「从图库目录重建索引」。
+                      目录里会自己建 steam-gallery-v1/&lt;备份 ID&gt;/，放原图与记录；不写别的东西，也不改目录里已有的文件。
                     </p>
                   )}
                 </form>
@@ -1737,8 +1736,7 @@ export function App() {
               {remoteConnected ? (
                 <div className="form-footer">
                   <span>
-                    {remoteState?.kind === 'folder' ? '目录' : 'WebDAV'} {remoteState?.baseUrl} · 图库{' '}
-                    {remoteState?.libraryId}
+                    {remoteState?.kind === 'folder' ? '目录' : 'WebDAV'} {remoteState?.baseUrl}
                   </span>
                   <div className="actions">
                     <button onClick={() => void disconnectRemoteAction()}>
@@ -1782,7 +1780,7 @@ export function App() {
                   />
                   <span>
                     <strong>后台自动收集</strong>
-                    <small>按间隔增量扫描来源并归档新增截图（归档是幂等的，不会重复复制）</small>
+                    <small>按间隔增量扫描 Steam 来源，新截图会自动纳入备份范围</small>
                   </span>
                 </label>
                 <label className="toggle-row">

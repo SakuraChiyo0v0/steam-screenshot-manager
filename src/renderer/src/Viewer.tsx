@@ -247,13 +247,13 @@ export function Viewer({
                       : '缺失'
                     : '存在'}
                 </dd>
-                <dt>图库副本</dt>
-                <dd>{shot.archived ? '已归档到本机图库' : '尚未归档'}</dd>
+                <dt>本机副本</dt>
+                <dd>{shot.archived ? '已缓存原图' : '尚未缓存'}</dd>
                 <dt>备份状态</dt>
                 <dd>{shot.backedUp ? '已备份到远端' : '尚未备份到远端'}</dd>
               </dl>
               <p className="muted small">
-                图片按原比例显示。这里展示的是本机来源文件，尚未复制进独立图库。
+                图片按原比例显示。这里展示的是 Steam 来源里的原图。
               </p>
             </aside>
           )}

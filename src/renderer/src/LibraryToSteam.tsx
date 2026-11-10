@@ -4,9 +4,9 @@ import type { SteamScreenshotPreview, SteamScreenshotState, SteamScreenshotTarge
 import { call, getApi } from './api'
 
 /**
- * 本机图库 → Steam。
+ * 第 2 步：本机临时副本 → Steam。
  *
- * 和「远端 → 图库」分开：那个把原图取回本机，这个把本机的原图写回 Steam 的截图列表。
+ * 和「取回原图」分开：那个把原图取回本机，这个把原图写回 Steam 的截图列表。
  * 两件事的失败后果完全不同（前者只是本地文件，后者会动 Steam 的索引并且要能在退出 Steam 后回滚）。
  */
 export function LibraryToSteam({ onDone }: { onDone?: () => void }) {
@@ -75,11 +75,11 @@ export function LibraryToSteam({ onDone }: { onDone?: () => void }) {
       <div className="section-heading">
         <div>
           <h2>
-            <span className="dir-badge from">本机图库</span>
+            <span className="dir-badge from">第 2 步</span>
             <span className="dir-arrow">→</span>
-            <span className="dir-badge to">Steam</span>
+            <span className="dir-badge to">写回 Steam</span>
           </h2>
-          <p>把图库里已有的原图写回 Steam 的本地截图列表。执行前要把 Steam 完全退出。</p>
+          <p>把本机已有的原图写回 Steam 的本地截图列表。执行前要把 Steam 完全退出。</p>
         </div>
       </div>
       <p className="panel-note">
@@ -130,7 +130,7 @@ export function LibraryToSteam({ onDone }: { onDone?: () => void }) {
         </div>
 
         <div className="form-footer">
-          <span>选择要写回的游戏；只处理这个账号已在图库里的副本。</span>
+          <span>选择要写回的游戏；只处理这个账号在本机有原图的截图。</span>
           <button type="button" onClick={() => { setSelected(games.map((game) => game.gameKey)); setPreview(null) }}>
             全选
           </button>
@@ -154,7 +154,7 @@ export function LibraryToSteam({ onDone }: { onDone?: () => void }) {
             </label>
           ))}
         </div>
-        {games.length === 0 && <p className="panel-note">图库还没有截图：先归档，或从远端取回。</p>}
+        {games.length === 0 && <p className="panel-note">本机还没有可写回的截图：先在上面「取回原图」。</p>}
 
         <div className="actions">
           <button type="button" onClick={() => void run(refresh)}>
