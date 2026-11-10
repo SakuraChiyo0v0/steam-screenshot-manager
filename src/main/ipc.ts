@@ -115,6 +115,7 @@ import {
   cancelUpload,
   browseRemote,
   connectRemote,
+  removeRemoteTarget,
   remoteTargets,
   syncSummary,
   disconnectRemote,
@@ -705,7 +706,12 @@ export function registerIpcHandlers(): void {
   handle(IPC_CHANNELS.syncDisconnect, (payload): RemoteStateDto => {
     const input = payload as { remoteId?: unknown } | undefined
     const remoteId = typeof input?.remoteId === 'string' ? input.remoteId : undefined
-    return disconnectRemote(remoteId)
+    // 指定了具体地址就是"移除这个备份地址"；不指定时保留旧的"断开"语义
+    if (remoteId) {
+      removeRemoteTarget(remoteId)
+      return getRemoteState()
+    }
+    return disconnectRemote()
   })
 
   handle(IPC_CHANNELS.syncState, (): RemoteStateDto => getRemoteState())

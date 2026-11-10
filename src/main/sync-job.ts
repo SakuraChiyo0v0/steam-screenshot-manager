@@ -530,6 +530,26 @@ export async function connectRemote(input: {
  * 必须保留 remotes 行——remote_objects 以 remote_id 关联，
  * 删行会让"这台设备已经备份了哪些资产"的历史失联，重连后会被当成全部未备份而重复上传。
  */
+/**
+ * 真正移除一个备份地址。
+ *
+ * 以前的「×」只清凭据、把状态标成 disconnected，行还在列表里 —— 看起来就是"移除了没消失"。
+ * 这里把登记删干净：凭据文件、这个地址的上传记录、remotes 行。
+ * 远端已经备份的文件不动（那是用户的数据）。
+ */
+export function removeRemoteTarget(remoteId: string): void {
+  const { database, paths } = getAppContext()
+  const row = readRemoteRow(remoteId)
+  if (!row) {
+    return
+  }
+  if (row.credentialRef.length > 0) {
+    deleteCredential(paths.dataDir, row.credentialRef)
+  }
+  database.db.prepare('DELETE FROM remote_objects WHERE remote_id = ?').run(remoteId)
+  database.db.prepare('DELETE FROM remotes WHERE remote_id = ?').run(remoteId)
+}
+
 export function disconnectRemote(remoteId?: string): RemoteStateDto {
   const { database, paths } = getAppContext()
   const row = readRemoteRow(remoteId)
