@@ -207,6 +207,14 @@ async function runSyncAll(): Promise<SyncAllResult> {
         count: 0,
         detail: `备份里的 ${catalog.games.length} 款游戏本机都已有，无需取回`
       })
+    } else if (missingCount > 200) {
+      // 一次要下几百上千张时不要"偷偷"开始：先告诉用户，让他决定
+      steps.push({
+        step: 'pull',
+        ok: true,
+        count: 0,
+        detail: `备份里比本机多 ${missingCount} 张，已跳过自动取回（避免长时间下载）；需要时点「从备份取回」`
+      })
     } else {
       const result = await runRestore({ gameKeys })
       pulled = result.restored

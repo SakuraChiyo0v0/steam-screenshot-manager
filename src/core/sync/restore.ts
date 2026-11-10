@@ -181,10 +181,21 @@ export function planRestoreGames(
   libraryRoot: string
 ): RestoreGamePlan[] {
   const root = resolve(libraryRoot)
+  // "本机已有"包含两种情况：图库里有受管副本，或者 Steam 来源里就存在这张原图。
+  // 只看图库会导致「从备份取回」把 Steam 里明明还在的图重新下载一遍。
   const hasLocal = db.prepare(
     `SELECT 1 AS ok FROM assets a
-       JOIN local_copies lc ON lc.asset_id = a.asset_id AND lc.present = 1 AND lc.library_root = ?
       WHERE a.account_key = ? AND a.game_key = ? AND a.sha256 = ?
+        AND (
+          EXISTS (
+            SELECT 1 FROM local_copies lc
+             WHERE lc.asset_id = a.asset_id AND lc.present = 1 AND lc.library_root = ?
+          )
+          OR EXISTS (
+            SELECT 1 FROM source_files sf
+             WHERE sf.asset_id = a.asset_id AND sf.present = 1
+          )
+        )
       LIMIT 1`
   )
 
@@ -206,7 +217,7 @@ export function planRestoreGames(
     }
     entry.assets += 1
     entry.bytes += record.bytes
-    if (hasLocal.get(root, record.accountKey, record.gameKey, record.sha256)) {
+    if (hasLocal.get(record.accountKey, record.gameKey, record.sha256, root)) {
       entry.alreadyLocal += 1
     }
     byGame.set(record.gameKey, entry)
