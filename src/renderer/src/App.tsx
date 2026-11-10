@@ -634,9 +634,9 @@ export function App() {
     }
   }
 
-  const addSource = async () => {
+  const addSource = async (paths?: string[]) => {
     try {
-      const next = await call((api) => api.addSource())
+      const next = await call((api) => api.addSource(paths && paths.length > 0 ? { paths } : undefined))
       setSources(next)
       const roots = await call((api) => api.discoverSources())
       setDiscovered(roots)
@@ -1891,6 +1891,12 @@ export function App() {
               <>
                 <div className="section-heading">
                   <h3>自动发现</h3>
+                  <button
+                    disabled={discovered.every((root) => root.registeredSourceId)}
+                    onClick={() => void addSource(discovered.map((root) => root.rootPath))}
+                  >
+                    全部登记
+                  </button>
                 </div>
                 <p className="panel-note">
                   {discovered

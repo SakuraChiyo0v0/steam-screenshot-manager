@@ -72,7 +72,7 @@ import { assetUrl, miniUrl, thumbnailUrl } from './asset-protocol'
 import { importLibraryIndex } from '@core/library/import'
 import type { SqliteDatabase } from '@core/db/sqlite'
 import { cancelJob, listJobs } from './jobs'
-import { syncAll } from './sync-all'
+import { getSyncAllState, startSyncAll } from './sync-all'
 import { getAppContext } from './app-context'
 import { applyLoginItem } from './login-item'
 import { rescheduleAutoCollect } from './auto-collect'
@@ -498,30 +498,50 @@ export function registerIpcHandlers(): void {
 
   handle(IPC_CHANNELS.sourcesList, (): RegisteredSourceDto[] => currentSources())
 
-  handle(IPC_CHANNELS.sourcesAdd, async (): Promise<RegisteredSourceDto[]> => {
+  handle(IPC_CHANNELS.sourcesAdd, async (payload): Promise<RegisteredSourceDto[]> => {
     const { database } = getAppContext()
-    const picked = await dialog.showOpenDialog({
-      title: '选择 Steam 数据根目录',
-      properties: ['openDirectory']
-    })
 
-    if (picked.canceled || picked.filePaths.length === 0) {
-      return currentSources()
-    }
+    // 可以直接传目录（例如"把发现的来源一起加进来"），也可以弹选择框一次选多个
+    const input = payload as { paths?: unknown } | undefined
+    let candidates: string[] = Array.isArray(input?.paths)
+      ? input.paths.filter((item): item is string => typeof item === 'string')
+      : []
 
-    const rootPath = validateManualRoot(picked.filePaths[0])
-    const existing = listSources(database.db).find(
-      (row) => row.rootPath.toLowerCase() === rootPath.toLowerCase()
-    )
-    if (!existing) {
-      insertSource(database.db, {
-        sourceId: randomUUID(),
-        rootPath,
-        kind: 'manual',
-        createdAt: new Date().toISOString()
+    if (candidates.length === 0) {
+      const picked = await dialog.showOpenDialog({
+        title: '选择 Steam 数据根目录（可以一次选多个）',
+        properties: ['openDirectory', 'multiSelections']
       })
+      if (picked.canceled || picked.filePaths.length === 0) {
+        return currentSources()
+      }
+      candidates = picked.filePaths
     }
 
+    const problems: string[] = []
+    for (const candidate of candidates) {
+      try {
+        const rootPath = validateManualRoot(candidate)
+        const existing = listSources(database.db).find(
+          (row) => row.rootPath.toLowerCase() === rootPath.toLowerCase()
+        )
+        if (!existing) {
+          insertSource(database.db, {
+            sourceId: randomUUID(),
+            rootPath,
+            kind: 'manual',
+            createdAt: new Date().toISOString()
+          })
+        }
+      } catch (error) {
+        // 选错一个不该让其它目录白选：记下来，最后一起说
+        problems.push(`${candidate}：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    if (problems.length > 0) {
+      throw new AppError('LIB_PATH_INVALID', problems.join('；'))
+    }
     return currentSources()
   })
 
@@ -645,16 +665,30 @@ export function registerIpcHandlers(): void {
 
   handle(IPC_CHANNELS.syncTargets, (): RemoteTargetDto[] => remoteTargets())
 
-  handle(IPC_CHANNELS.syncAll, async (): Promise<SyncAllResultDto> => {
-    const result = await syncAll()
+  handle(IPC_CHANNELS.syncAll, (): { started: boolean; error?: string } => startSyncAll())
+
+  handle(IPC_CHANNELS.syncAllState, (): SyncAllResultDto | null => {
+    const state = getSyncAllState()
+    if (state.error) {
+      throw new AppError('APP_INTERNAL', state.error)
+    }
+    if (!state.last) {
+      return null
+    }
+    const result = state.last
     return {
       sources: result.sources,
-      failedSources: result.failedSources,
+      targets: result.targets,
       backedUp: result.backedUp,
       failed: result.failed,
-      targets: result.targets,
-      scannedAssets: result.scannedAssets,
-      errors: result.errors
+      pulled: result.pulled,
+      writtenBack: result.writtenBack,
+      steps: result.steps.map((step) => ({
+        step: step.step,
+        ok: step.ok,
+        count: step.count,
+        detail: step.detail
+      }))
     }
   })
 

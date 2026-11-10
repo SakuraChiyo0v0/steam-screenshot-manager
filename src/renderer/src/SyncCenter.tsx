@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowClockwiseIcon, CheckCircleIcon, CloudArrowUpIcon, GameControllerIcon, WarningCircleIcon } from '@phosphor-icons/react'
 import { describeError } from '@shared/messages'
-import type { JobSummaryDto, RemoteTargetDto, SyncSummaryDto } from '@shared/types'
+import type { JobSummaryDto, RemoteTargetDto, SyncStepDto, SyncSummaryDto } from '@shared/types'
 import { call, getApi } from './api'
-import { RemoteToLibrary } from './RemoteToLibrary'
-import { LibraryToSteam } from './LibraryToSteam'
 
 /**
  * 同步中心。
@@ -22,6 +20,7 @@ export function SyncCenter() {
   const [jobs, setJobs] = useState<JobSummaryDto[]>([])
   const [running, setRunning] = useState(false)
   const [note, setNote] = useState('')
+  const [steps, setSteps] = useState<readonly SyncStepDto[]>([])
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
@@ -46,9 +45,25 @@ export function SyncCenter() {
       try {
         const list = await call((api) => api.listJobs())
         setJobs(list)
-        const busy = list.some((job) => job.running && (job.id === 'scan' || job.id === 'upload'))
+        const busy = list.some((job) => job.running && (job.id === 'scan' || job.id === 'upload' || job.id === 'restore'))
         setRunning(busy)
-        if (wasRunning && !busy) void refresh()
+        if (wasRunning && !busy) {
+          // 跑完了：取这一轮的结果并刷新数字
+          void call((api) => api.getSyncAllState())
+            .then((state) => {
+              if (!state) return
+              setSteps(state.steps)
+              setNote(
+                `推出去 ${state.backedUp} 张 · 取回来 ${state.pulled} 张 · ${
+                  state.writtenBack < 0 ? '写回 Steam：跳过' : `写回 Steam ${state.writtenBack} 张`
+                }`
+              )
+              const bad = state.steps.filter((step) => !step.ok)
+              setError(bad.length > 0 ? bad.map((step) => step.detail).join('；') : '')
+            })
+            .catch(() => {})
+          void refresh()
+        }
         wasRunning = busy
       } catch {
         // 忽略：下一轮再看
@@ -62,21 +77,17 @@ export function SyncCenter() {
   const startSync = async () => {
     setError('')
     setNote('')
-    setRunning(true)
+    setSteps([])
     try {
-      const result = await call((api) => api.syncAll())
-      const parts = [`已同步 ${result.backedUp} 张`]
-      if (result.scannedAssets > 0) parts.push(`新发现 ${result.scannedAssets} 张`)
-      if (result.failed > 0) parts.push(`失败 ${result.failed}`)
-      if (result.failedSources > 0) parts.push(`${result.failedSources} 个来源读不到`)
-      setNote(parts.join(' · ') + `（${result.targets} 个地址）`)
-      if (result.errors.length > 0) setError(result.errors.join('；'))
-      await refresh()
+      // 后端立即返回，真正的活交给后台；界面靠任务状态自动更新
+      const ack = await call((api) => api.syncAll())
+      if (!ack.started) {
+        setError(ack.error ?? '同步没能启动')
+        return
+      }
+      setNote('已开始同步，进度看上面的任务条')
     } catch (failure) {
       setError(describeError(failure instanceof Error ? failure.message : String(failure)))
-    } finally {
-      setRunning(false)
-      void refresh()
     }
   }
 
@@ -100,14 +111,14 @@ export function SyncCenter() {
             <strong>Steam 里 {total} 张截图</strong>
           </div>
           <button className="primary hero-button" disabled={running || addressCount === 0} onClick={() => void startSync()}>
-            {running ? '正在同步…' : '一键同步'}
+            {running ? '正在同步…' : '一键同步（双向）'}
             {!running && <ArrowClockwiseIcon size={18} />}
           </button>
         </div>
         <p className="hero-note">
           {addressCount === 0
             ? '还没有备份地址：先去设置里加一个（本机盘、NAS 共享或 WebDAV 都行）。'
-            : `会推到 ${addressCount} 个备份地址。只做并集：新截图会备份，本机删掉的不会去删备份。`}
+            : `会推到 ${addressCount} 个备份地址，同时把备份里有、本机没有的取回来。只做并集：哪边都不会因为另一边少了而删除。`}
         </p>
         {progress && (
           <p className="hero-progress" role="status">
@@ -119,6 +130,19 @@ export function SyncCenter() {
           </p>
         )}
         {note && <p className="hero-ok">{note}</p>}
+        {steps.length > 0 && (
+          <ul className="sync-steps">
+            {steps.map((step) => (
+              <li key={step.step} className={step.ok ? 'ok' : 'warn'}>
+                {step.ok ? <CheckCircleIcon size={15} weight="fill" /> : <WarningCircleIcon size={15} />}
+                <span>
+                  {step.step === 'push' ? '推送' : step.step === 'pull' ? '取回' : '写回 Steam'}：
+                  {step.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
         {error && (
           <p className="hero-error">
             <WarningCircleIcon size={16} /> {error}
@@ -164,16 +188,6 @@ export function SyncCenter() {
         )}
       </section>
 
-      <details className="settings-card restore-block">
-        <summary>
-          <strong>换电脑了？从备份恢复到 Steam</strong>
-          <span className="muted small">两步：先取回原图，再写回 Steam</span>
-        </summary>
-        <div className="sync-stack">
-          <RemoteToLibrary onDone={() => void refresh()} />
-          <LibraryToSteam onDone={() => void refresh()} />
-        </div>
-      </details>
     </div>
   )
 }

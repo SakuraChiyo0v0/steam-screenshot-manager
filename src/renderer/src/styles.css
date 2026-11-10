@@ -1895,3 +1895,8 @@ dialog.remote-browser {
 .restore-block summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
 .restore-block > .sync-stack { margin-top: 14px; }
 .restore-block .settings-card { background: rgba(0, 0, 0, 0.02); }
+
+.sync-steps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; font-size: 0.84rem; }
+.sync-steps li { display: flex; align-items: center; gap: 6px; }
+.sync-steps li.ok { color: var(--accent, #2f855a); }
+.sync-steps li.warn { color: #b7791f; }

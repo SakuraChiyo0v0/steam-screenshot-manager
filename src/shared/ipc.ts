@@ -103,8 +103,10 @@ export const IPC_CHANNELS = {
   syncSummary: 'sync:summary',
   /** 备份地址列表（可以配多个） */
   syncTargets: 'sync:targets',
-  /** 一键同步：扫描来源 + 备份到全部地址 */
+  /** 一键同步：扫描来源 + 备份到全部地址（后台跑，立即返回） */
   syncAll: 'sync:all',
+  /** 上一轮一键同步的结果 */
+  syncAllState: 'sync:allState',
   /** 统一任务视图：四个任务的状态与取消 */
   jobsList: 'jobs:list',
   jobsCancel: 'jobs:cancel',
@@ -182,6 +184,7 @@ export const EXPOSED_METHODS = [
   'getSyncSummary',
   'listRemoteTargets',
   'syncAll',
+  'getSyncAllState',
   'listJobs',
   'cancelJob',
   'disconnectRemote',
@@ -267,6 +270,7 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   getSyncSummary: IPC_CHANNELS.syncSummary,
   listRemoteTargets: IPC_CHANNELS.syncTargets,
   syncAll: IPC_CHANNELS.syncAll,
+  getSyncAllState: IPC_CHANNELS.syncAllState,
   listJobs: IPC_CHANNELS.jobsList,
   cancelJob: IPC_CHANNELS.jobsCancel,
   disconnectRemote: IPC_CHANNELS.syncDisconnect,
@@ -404,8 +408,8 @@ export interface RendererApi {
 
   discoverSources(): Promise<IpcResult<DiscoveredRootDto[]>>
   listSources(): Promise<IpcResult<RegisteredSourceDto[]>>
-  /** 打开目录选择并登记来源；取消时返回当前来源列表状态 */
-  addSource(): Promise<IpcResult<RegisteredSourceDto[]>>
+  /** 打开目录选择（可多选）并登记来源；也可以直接传一组目录 */
+  addSource(payload?: { readonly paths?: readonly string[] }): Promise<IpcResult<RegisteredSourceDto[]>>
   removeSource(payload: RemoveSourcePayload): Promise<IpcResult<RegisteredSourceDto[]>>
 
   startScan(payload: ScanStartPayload): Promise<IpcResult<ScanSummaryDto>>
@@ -440,8 +444,10 @@ export interface RendererApi {
   getSyncSummary(): Promise<IpcResult<SyncSummaryDto>>
   /** 备份地址列表：本机盘 / NAS 共享 / WebDAV 可以同时存在多个 */
   listRemoteTargets(): Promise<IpcResult<RemoteTargetDto[]>>
-  /** 一键同步：扫描 Steam 来源并把新截图备份到全部地址（取并集，不处理删除） */
-  syncAll(): Promise<IpcResult<SyncAllResultDto>>
+  /** 一键同步：后台开始跑，立即返回（进度看任务条） */
+  syncAll(): Promise<IpcResult<{ started: boolean; error?: string }>>
+  /** 上一轮同步结果；还没跑过返回 null */
+  getSyncAllState(): Promise<IpcResult<SyncAllResultDto | null>>
   /** 统一任务视图 */
   listJobs(): Promise<IpcResult<JobSummaryDto[]>>
   cancelJob(payload: { readonly id: string }): Promise<IpcResult<JobSummaryDto[]>>

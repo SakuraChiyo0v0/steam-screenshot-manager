@@ -317,14 +317,24 @@ export interface LibraryCopyStateDto {
 }
 
 /** 一键同步的结果（扫描 + 备份到全部地址，取并集） */
+export interface SyncStepDto {
+  readonly step: 'push' | 'pull' | 'writeback'
+  readonly ok: boolean
+  readonly count: number
+  readonly detail: string
+}
+
+/** 一键双向同步的结果：推 + 收 + 写回。 */
 export interface SyncAllResultDto {
   readonly sources: number
-  readonly failedSources: number
+  readonly targets: number
   readonly backedUp: number
   readonly failed: number
-  readonly targets: number
-  readonly scannedAssets: number
-  readonly errors: readonly string[]
+  /** 从备份取回本机的张数 */
+  readonly pulled: number
+  /** 写回 Steam 的张数；-1 表示这一步被跳过 */
+  readonly writtenBack: number
+  readonly steps: readonly SyncStepDto[]
 }
 
 /* ------------------------------------------------------------------ *
