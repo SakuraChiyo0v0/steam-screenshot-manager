@@ -100,6 +100,9 @@ export function createUpdater(options: CreateUpdaterOptions): Updater | null {
     error: (message?: unknown) => log.warn('更新', { msg: String(message).split('\n')[0] }),
     debug: () => undefined
   }
+  // 检查与下载分开：electron-updater 默认 autoDownload=true，那样「只是检查一下」也会开始下载，
+  // 关掉开关后也拦不住。下载由调度器（开了自动检查时）或用户点按钮显式触发。
+  autoUpdater.autoDownload = false
   // 下完了用户没点「重启并安装」：正常退出时静默装上（electron-updater 的默认值，这里写明）
   autoUpdater.autoInstallOnAppQuit = true
 
