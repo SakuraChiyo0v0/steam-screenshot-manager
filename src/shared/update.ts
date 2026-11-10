@@ -14,10 +14,10 @@ export function friendlyUpdateError(error: unknown): string {
   if (/ERR_INTERNET_DISCONNECTED|ENOTFOUND|EAI_AGAIN|ERR_NAME_NOT_RESOLVED/i.test(haystack)) {
     return '连不上更新服务器，检查一下网络或代理'
   }
-  if (/ETIMEDOUT|ERR_TIMED_OUT|ESOCKETTIMEDOUT|timeout/i.test(haystack)) {
+  if (/ETIMEDOUT|TIMED_OUT|ESOCKETTIMEDOUT|timeout/i.test(haystack)) {
     return '连接更新服务器超时'
   }
-  if (/ECONNREFUSED|ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ECONNRESET|ERR_CONNECTION_TIMED_OUT/i.test(haystack)) {
+  if (/ECONNREFUSED|ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ECONNRESET/i.test(haystack)) {
     return '更新服务器拒绝了连接'
   }
   if (/\b403\b|rate limit/i.test(haystack)) return 'GitHub 暂时限制了访问，稍后再试'

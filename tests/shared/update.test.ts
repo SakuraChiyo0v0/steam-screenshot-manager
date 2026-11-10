@@ -14,6 +14,8 @@ describe('更新错误翻译', () => {
     expect(friendlyUpdateError(new Error('net::ERR_INTERNET_DISCONNECTED'))).toContain('网络')
     expect(friendlyUpdateError(Object.assign(new Error('x'), { code: 'ETIMEDOUT' }))).toContain('超时')
     expect(friendlyUpdateError(new Error('connect ECONNREFUSED 127.0.0.1'))).toContain('拒绝')
+    // Chromium 的 net:: 错误：TIMED_OUT 属于超时，别被「拒绝连接」那条抢先吃掉
+    expect(friendlyUpdateError(new Error('net::ERR_CONNECTION_TIMED_OUT'))).toContain('超时')
     expect(friendlyUpdateError(new Error('HTTP error 403 rate limit'))).toContain('限制')
     expect(friendlyUpdateError(new Error('sha512 checksum mismatch'))).toContain('校验')
   })
