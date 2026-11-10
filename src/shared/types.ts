@@ -316,6 +316,17 @@ export interface LibraryCopyStateDto {
   readonly assets: number
 }
 
+/** 一键同步的结果（扫描 + 备份到全部地址，取并集） */
+export interface SyncAllResultDto {
+  readonly sources: number
+  readonly failedSources: number
+  readonly backedUp: number
+  readonly failed: number
+  readonly targets: number
+  readonly scannedAssets: number
+  readonly errors: readonly string[]
+}
+
 /* ------------------------------------------------------------------ *
  * 远端备份（WebDAV）
  * ------------------------------------------------------------------ */

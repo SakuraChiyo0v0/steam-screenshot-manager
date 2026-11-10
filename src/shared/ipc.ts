@@ -42,6 +42,7 @@ import type {
   JobSummaryDto,
   RemoteBrowseDto,
   RemoteTargetDto,
+  SyncAllResultDto,
   SyncSummaryDto,
   RemoteKind,
   RegisteredSourceDto,
@@ -102,6 +103,8 @@ export const IPC_CHANNELS = {
   syncSummary: 'sync:summary',
   /** 备份地址列表（可以配多个） */
   syncTargets: 'sync:targets',
+  /** 一键同步：扫描来源 + 备份到全部地址 */
+  syncAll: 'sync:all',
   /** 统一任务视图：四个任务的状态与取消 */
   jobsList: 'jobs:list',
   jobsCancel: 'jobs:cancel',
@@ -178,6 +181,7 @@ export const EXPOSED_METHODS = [
   'browseRemote',
   'getSyncSummary',
   'listRemoteTargets',
+  'syncAll',
   'listJobs',
   'cancelJob',
   'disconnectRemote',
@@ -262,6 +266,7 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   browseRemote: IPC_CHANNELS.syncBrowse,
   getSyncSummary: IPC_CHANNELS.syncSummary,
   listRemoteTargets: IPC_CHANNELS.syncTargets,
+  syncAll: IPC_CHANNELS.syncAll,
   listJobs: IPC_CHANNELS.jobsList,
   cancelJob: IPC_CHANNELS.jobsCancel,
   disconnectRemote: IPC_CHANNELS.syncDisconnect,
@@ -435,6 +440,8 @@ export interface RendererApi {
   getSyncSummary(): Promise<IpcResult<SyncSummaryDto>>
   /** 备份地址列表：本机盘 / NAS 共享 / WebDAV 可以同时存在多个 */
   listRemoteTargets(): Promise<IpcResult<RemoteTargetDto[]>>
+  /** 一键同步：扫描 Steam 来源并把新截图备份到全部地址（取并集，不处理删除） */
+  syncAll(): Promise<IpcResult<SyncAllResultDto>>
   /** 统一任务视图 */
   listJobs(): Promise<IpcResult<JobSummaryDto[]>>
   cancelJob(payload: { readonly id: string }): Promise<IpcResult<JobSummaryDto[]>>

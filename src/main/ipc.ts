@@ -29,6 +29,7 @@ import type {
   JobSummaryDto,
   RemoteBrowseDto,
   RemoteTargetDto,
+  SyncAllResultDto,
   SyncSummaryDto,
   RemoteCatalogDto,
   RemoteConnectionDto,
@@ -71,6 +72,7 @@ import { assetUrl, miniUrl, thumbnailUrl } from './asset-protocol'
 import { importLibraryIndex } from '@core/library/import'
 import type { SqliteDatabase } from '@core/db/sqlite'
 import { cancelJob, listJobs } from './jobs'
+import { syncAll } from './sync-all'
 import { getAppContext } from './app-context'
 import { applyLoginItem } from './login-item'
 import { rescheduleAutoCollect } from './auto-collect'
@@ -642,6 +644,19 @@ export function registerIpcHandlers(): void {
   handle(IPC_CHANNELS.syncSummary, (): SyncSummaryDto => syncSummary())
 
   handle(IPC_CHANNELS.syncTargets, (): RemoteTargetDto[] => remoteTargets())
+
+  handle(IPC_CHANNELS.syncAll, async (): Promise<SyncAllResultDto> => {
+    const result = await syncAll()
+    return {
+      sources: result.sources,
+      failedSources: result.failedSources,
+      backedUp: result.backedUp,
+      failed: result.failed,
+      targets: result.targets,
+      scannedAssets: result.scannedAssets,
+      errors: result.errors
+    }
+  })
 
   handle(IPC_CHANNELS.jobsList, (): JobSummaryDto[] => listJobs())
 

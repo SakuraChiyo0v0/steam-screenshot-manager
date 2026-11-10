@@ -1862,3 +1862,36 @@ dialog.remote-browser {
   white-space: nowrap;
 }
 .target-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------------- 一键同步主卡 ---------------- */
+.sync-hero {
+  padding: 20px 22px;
+  border-radius: 20px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  background: var(--surface, rgba(255, 255, 255, 0.72));
+}
+.sync-hero .hero-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.sync-hero .hero-line { display: flex; align-items: center; gap: 10px; font-size: 1.15rem; }
+.sync-hero .hero-button { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; padding: 10px 22px; }
+.sync-hero .hero-note { margin: 12px 0 0; font-size: 0.86rem; opacity: 0.75; }
+.sync-hero .hero-progress { margin: 8px 0 0; font-size: 0.86rem; }
+.sync-hero .hero-ok { margin: 8px 0 0; font-size: 0.86rem; color: var(--accent, #2f855a); }
+.sync-hero .hero-error {
+  margin: 8px 0 0;
+  font-size: 0.84rem;
+  color: #c53030;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.target-state.ok { color: var(--accent, #2f855a); display: flex; }
+.target-state.warn { color: #b7791f; display: flex; }
+.restore-block summary { cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+.restore-block > .sync-stack { margin-top: 14px; }
+.restore-block .settings-card { background: rgba(0, 0, 0, 0.02); }

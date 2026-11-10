@@ -34,8 +34,6 @@ import type {
   SteamKeyStatusDto,
   RemoteStateDto,
   RemoteTargetDto,
-  SyncSummaryDto,
-  UploadStatusDto,
   RegisteredSourceDto,
   ScanProgressDto,
   UpdateStateDto,
@@ -67,9 +65,7 @@ import { JobCenter } from './JobCenter'
 import { SetupChecklist, type SetupStep } from './SetupChecklist'
 import { describeError } from '@shared/messages'
 import { Diagnostics } from './Diagnostics'
-import { RemoteToLibrary } from './RemoteToLibrary'
-import { LibraryToSteam } from './LibraryToSteam'
-import { SyncOverview } from './SyncOverview'
+import { SyncCenter } from './SyncCenter'
 
 type Page = 'library' | 'all' | 'sync' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -189,9 +185,7 @@ export function App() {
   const [viewer, setViewer] = useState<{ items: ViewerItem[]; index: number } | null>(null)
   const [toast, setToast] = useState('')
   const [remoteState, setRemoteState] = useState<RemoteStateDto | null>(null)
-  const [syncSummary, setSyncSummary] = useState<SyncSummaryDto | null>(null)
   const [targets, setTargets] = useState<RemoteTargetDto[]>([])
-  const [uploadStatus, setUploadStatus] = useState<UploadStatusDto | null>(null)
   const [connectForm, setConnectForm] = useState<{
     kind: 'webdav' | 'folder'
     baseUrl: string
@@ -339,24 +333,14 @@ export function App() {
     return () => api.offPreviewReady()
   }, [])
 
-  /** 上传进度事件订阅。 */
-  useEffect(() => {
-    const api = getApi()
-    if (!api) return
-    api.onUploadProgress((status: UploadStatusDto) => setUploadStatus(status))
-    return () => api.offUploadProgress()
-  }, [])
-
   const refreshRemoteState = useCallback(async () => {
     if (!hasApi) return
     try {
-      const [state, summary, list] = await Promise.all([
+      const [state, list] = await Promise.all([
         call((api) => api.getRemoteState()),
-        call((api) => api.getSyncSummary()),
         call((api) => api.listRemoteTargets())
       ])
       setRemoteState(state)
-      setSyncSummary(summary)
       setTargets(list)
     } catch {
       /* 远端状态读取失败不影响其它功能 */
@@ -775,31 +759,7 @@ export function App() {
     }
   }
 
-  const startUpload = async (forceRetry = false) => {
-    setToast(forceRetry ? '正在重试失败项…' : '备份已开始，可以继续浏览界面。')
-    try {
-      const summary = await call((api) => api.startUpload(forceRetry ? { forceRetry: true } : {}))
-      const skipped = summary.unavailableTargets ?? []
-      setToast(
-        `备份完成：计划 ${summary.total}，已校验 ${summary.verified}（新传 ${summary.uploaded}），失败 ${summary.failed}，耗时 ${(summary.durationMs / 1000).toFixed(1)} 秒${summary.cancelled ? '（已取消）' : ''}${summary.abortedByAuth ? '（远端拒绝认证）' : ''}${
-          skipped.length > 0 ? `；这轮取不到、已跳过：${skipped.join('、')}` : ''
-        }`
-      )
-      await refreshRemoteState()
-    } catch (error) {
-      setToast(errorMessage(error))
-      await refreshRemoteState()
-    }
-  }
 
-  const cancelUpload = async () => {
-    try {
-      setUploadStatus(await call((api) => api.cancelUpload()))
-      setToast('已请求暂停，当前文件传完后停止；已完成的备份保留。')
-    } catch (error) {
-      setToast(errorMessage(error))
-    }
-  }
 
 
 
@@ -894,7 +854,6 @@ export function App() {
 
   const selectedScanSource = sources.find((source) => source.sourceId === scanSourceId) ?? null
   const scanRunning = scanStatus?.running === true
-  const uploadRunning = uploadStatus?.running === true
   const scanProgressLabel = scanStatus
     ? scanStatus.total === null
       ? `正在统计文件（已发现 ${scanStatus.processed}）`
@@ -1376,107 +1335,7 @@ export function App() {
           </>
         )}
 
-        {page === 'sync' && (
-          <div className="sync-stack">
-            <SyncOverview summary={syncSummary} />
-
-            {!remoteConnected ? (
-              <div className="connection-banner">
-                <span className="connection-icon">
-                  <CloudArrowUpIcon size={29} />
-                </span>
-                <div>
-                  <h2>还没有连接远端存储</h2>
-                  <p>先扫描一次 Steam 来源，再配一个备份地址（本机盘、NAS 共享或 WebDAV）。</p>
-                </div>
-                <button onClick={() => navigate('settings')}>
-                  去设置
-                  <ArrowRightIcon size={17} />
-                </button>
-              </div>
-            ) : (
-              <section className="settings-card direction-card">
-                <div className="section-heading">
-                  <div>
-                    <h2>
-                      <span className="dir-badge from">Steam 本地</span>
-                      <span className="dir-arrow">→</span>
-                      <span className="dir-badge to">备份地址</span>
-                    </h2>
-                    <p>
-                    {targets.length > 1
-                      ? `${targets.length} 个备份地址`
-                      : `${remoteState?.baseUrl ?? ''}${
-                          remoteState?.kind === 'folder' ? '（文件夹）' : '（WebDAV）'
-                        }`}
-                  </p>
-                  </div>
-                  {uploadRunning ? (
-                    <button onClick={() => void cancelUpload()}>停止</button>
-                  ) : (
-                    <button
-                      className="primary"
-                      onClick={() => void startUpload(false)}
-                    >
-                      {syncSummary && syncSummary.pending > 0
-                        ? `备份 ${syncSummary.pending} 张`
-                        : '检查并备份'}
-                      <ArrowRightIcon size={17} />
-                    </button>
-                  )}
-                </div>
-
-                <div className="stat-row">
-                  <div className="stat">
-                    <span className="muted">已备份</span>
-                    <strong>{syncSummary?.verified ?? 0}</strong>
-                  </div>
-                  <div className="stat">
-                    <span className="muted">待备份</span>
-                    <strong>{syncSummary?.pending ?? 0}</strong>
-                  </div>
-                  <div className="stat">
-                    <span className="muted">失败</span>
-                    <strong className={syncSummary?.failed ? 'danger' : ''}>
-                      {syncSummary?.failed ?? 0}
-                    </strong>
-                  </div>
-                  <div className="stat">
-                    <span className="muted">可备份</span>
-                    <strong>{syncSummary?.indexedCount ?? 0}</strong>
-                  </div>
-                </div>
-
-                <p className="panel-note">
-                  只有「上传 → 读回校验 → 发布记录 → 读回校验」全部通过才算已备份。
-                  {syncSummary?.lastBackupAt
-                    ? ` 最近一次成功：${new Date(syncSummary.lastBackupAt).toLocaleString()}。`
-                    : ''}
-                </p>
-
-                {uploadStatus?.errorMessage && (
-                  <p className="panel-note">上次错误：{describeError(uploadStatus.errorMessage)}</p>
-                )}
-
-                <div className="form-footer">
-                  <span>断开只删本机凭据，远端已有的备份不受影响。</span>
-                  <div className="actions">
-                    <button
-                      disabled={uploadRunning || (syncSummary?.failed ?? 0) === 0}
-                      onClick={() => void startUpload(true)}
-                    >
-                      重试失败项
-                    </button>
-                    <button onClick={() => void disconnectRemoteAction()}>断开远端</button>
-                  </div>
-                </div>
-              </section>
-            )}
-
-            <RemoteToLibrary onDone={() => void refreshRemoteState().then(() => refreshLibrary())} />
-            <LibraryToSteam onDone={() => void refreshMeta()} />
-          </div>
-        )}
+        {page === 'sync' && <SyncCenter />}
         {page === 'settings' && (
           <div className="settings-stack">
             <section className="settings-card">
