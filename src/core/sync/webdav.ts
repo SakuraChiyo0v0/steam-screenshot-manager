@@ -14,7 +14,7 @@ import { createReadStream, createWriteStream, statSync } from 'node:fs'
 import { request as httpRequest, type IncomingMessage } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { AppError } from '@shared/errors'
-import type { RemoteClient } from './remote-client'
+import type { RemoteClient, RemoteEntry } from './remote-client'
 
 /**
  * 把用户填写的 WebDAV 地址拆成「源」与「根路径」。
@@ -483,6 +483,20 @@ export class DavClient {
     return { status: response.status, hrefs }
   }
 
+  async listEntries(relativePath: string): Promise<RemoteEntry[]> {
+    const response = await this.raw({
+      method: 'PROPFIND',
+      relativePath,
+      headers: { depth: '1', 'content-type': 'application/xml' },
+      bodyText: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><resourcetype/><getcontentlength/><getlastmodified/></prop></propfind>',
+      expectDav: true
+    })
+    if (response.status === 404 || response.text.length === 0) {
+      return []
+    }
+    return parseMultistatusEntries(response.text, this.config.rootPath, relativePath)
+  }
+
   async putFile(relativePath: string, filePath: string): Promise<number> {
     const response = await this.raw({
       method: 'PUT',
@@ -644,6 +658,93 @@ export async function probeCapabilities(
   }
 
   return items
+}
+
+/** 解码 XML 实体（远端可能把 & 拼成 &amp;）。 */
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&amp;/g, '&')
+}
+
+/**
+ * 从 PROPFIND 的 multistatus 里读出目录项。
+ *
+ * 命名空间前缀不固定（D: / d: / 没有），所以每处都按可选前缀匹配；
+ * 返回的是**相对远端根**的路径，根目录自己那一项会被跳过。
+ */
+export function parseMultistatusEntries(
+  xml: string,
+  rootPath: string,
+  requestedPath = ''
+): RemoteEntry[] {
+  const root = rootPath.replace(/^\/+|\/+$/g, '')
+  const requested = requestedPath.replace(/^\/+|\/+$/g, '')
+  const blocks = xml.match(/<(?:(?:[\w-]+):)?response\b[^>]*>[\s\S]*?<\/(?:(?:[\w-]+):)?response\s*>/g) ?? []
+  const entries: RemoteEntry[] = []
+
+  for (const block of blocks) {
+    const hrefMatch = /<(?:(?:[\w-]+):)?href\b[^>]*>([\s\S]*?)<\/(?:(?:[\w-]+):)?href\s*>/.exec(block)
+    if (!hrefMatch) continue
+    let pathname = decodeXmlEntities(hrefMatch[1]!.trim())
+    try {
+      pathname = new URL(pathname, 'http://dav.invalid').pathname
+    } catch {
+      // 当成路径处理
+    }
+    try {
+      pathname = decodeURIComponent(pathname)
+    } catch {
+      // 非法转义：保留原样
+    }
+    const trimmed = pathname.replace(/^\/+|\/+$/g, '')
+    if (trimmed.length === 0) continue
+    if (root.length > 0 && trimmed === root) continue
+    if (requested.length > 0 && trimmed === requested) continue
+
+    // href 的基准不统一：有的服务端给"相对它自己根"的路径（不带网关前缀），
+    // 有的给带前缀的完整路径。三种基准依次尝试，取第一个对得上的。
+    let relative: string | null = null
+    if (root.length > 0 && trimmed.startsWith(`${root}/`)) {
+      relative = trimmed.slice(root.length + 1)
+    } else if (requested.length > 0 && trimmed.startsWith(`${requested}/`)) {
+      relative = trimmed.slice(requested.length + 1)
+    } else {
+      // 兜底：当成相对服务端根的路径
+      relative = trimmed
+    }
+    if (!relative || relative.length === 0) continue
+
+    const resourcetype = /<(?:(?:[\w-]+):)?resourcetype\b[^>]*>([\s\S]*?)<\/(?:(?:[\w-]+):)?resourcetype\s*>/.exec(block)
+    const isDir = resourcetype ? /collection/i.test(resourcetype[1] ?? '') : false
+
+    const lengthMatch = /<(?:(?:[\w-]+):)?getcontentlength\b[^>]*>([\s\S]*?)<\/(?:(?:[\w-]+):)?getcontentlength\s*>/.exec(block)
+    const size = lengthMatch ? Number(lengthMatch[1]!.trim()) : Number.NaN
+
+    const modifiedMatch = /<(?:(?:[\w-]+):)?getlastmodified\b[^>]*>([\s\S]*?)<\/(?:(?:[\w-]+):)?getlastmodified\s*>/.exec(block)
+    const modifiedRaw = modifiedMatch ? decodeXmlEntities(modifiedMatch[1]!.trim()) : ''
+    const modified = modifiedRaw.length > 0 ? Date.parse(modifiedRaw) : Number.NaN
+
+    const segments = relative.split('/')
+    entries.push({
+      name: segments[segments.length - 1] ?? relative,
+      path: relative,
+      isDir,
+      size: Number.isFinite(size) && size >= 0 ? size : null,
+      modifiedAt: Number.isFinite(modified) ? new Date(modified).toISOString() : null
+    })
+  }
+
+  entries.sort((left, right) => {
+    if (left.isDir !== right.isDir) return left.isDir ? -1 : 1
+    return left.name.localeCompare(right.name, 'zh', { numeric: true, sensitivity: 'base' })
+  })
+  return entries
 }
 
 /**

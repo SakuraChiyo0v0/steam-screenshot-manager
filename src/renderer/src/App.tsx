@@ -62,6 +62,10 @@ import {
 } from './view-model'
 import { Viewer } from './Viewer'
 import { Modal } from './Modal'
+import { RemoteBrowser } from './RemoteBrowser'
+import { JobCenter } from './JobCenter'
+import { SetupChecklist, type SetupStep } from './SetupChecklist'
+import { describeError } from '@shared/messages'
 import { Diagnostics } from './Diagnostics'
 import { SteamScreenshotRestore } from './SteamScreenshotRestore'
 
@@ -87,7 +91,7 @@ function readTheme(): Theme {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  return describeError(error instanceof Error ? error.message : String(error))
 }
 
 /**
@@ -192,6 +196,8 @@ export function App() {
     password: string
   }>({ kind: 'webdav', baseUrl: '', folderPath: '', username: '', password: '' })
   const [connecting, setConnecting] = useState(false)
+  /** 远端目录浏览器：连接前先点进去选，省得手拼路径 */
+  const [browserOpen, setBrowserOpen] = useState(false)
   const [capabilities, setCapabilities] = useState<CapabilityItemDto[] | null>(null)
   const [diagnostics, setDiagnostics] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -926,11 +932,54 @@ export function App() {
     }
   }
 
+  const remoteConnected = remoteState?.connected === true
+
+  /**
+   * 首页清单：把「登记来源 → 有索引 → 选图库并归档 → 连远端」这条链摊开，
+   * 只把下一步做成按钮。全部完成时整个清单不显示。
+   */
+  const setupSteps: SetupStep[] = [
+    {
+      id: 'sources',
+      title: '登记 Steam 截图来源',
+      detail: sources.length > 0 ? `已登记 ${sources.length} 个来源` : '告诉应用 Steam 装在哪、截图存在哪',
+      done: sources.length > 0,
+      actionLabel: '添加来源',
+      action: () => void openSources()
+    },
+    {
+      id: 'index',
+      title: '扫描一次，建立索引',
+      detail:
+        (stats?.assets ?? 0) > 0 ? `索引里已有 ${stats?.assets ?? 0} 张截图` : '扫描只读取来源，不改动任何文件',
+      done: (stats?.assets ?? 0) > 0,
+      actionLabel: '开始扫描',
+      action: () => void openSources()
+    },
+    {
+      id: 'library',
+      title: '选一个图库目录并归档',
+      detail: settings?.libraryRoot
+        ? `已归档 ${copyState?.archived ?? 0} / ${copyState?.assets ?? 0} 张`
+        : '图库是独立副本：来源删除也不影响它，可以放在 NAS 上',
+      done: Boolean(settings?.libraryRoot) && (copyState?.assets ?? 0) > 0 && copyState?.archived === copyState?.assets,
+      actionLabel: settings?.libraryRoot ? '开始归档' : '选择图库目录',
+      action: () => void (settings?.libraryRoot ? startArchive() : pickLibraryRoot())
+    },
+    {
+      id: 'remote',
+      title: '连一个远端做备份',
+      detail: remoteConnected ? `已备份 ${remoteState?.verified ?? 0} / ${remoteState?.assets ?? 0} 张` : 'WebDAV 或 NAS 上的一个文件夹都行',
+      done: remoteConnected && (remoteState?.pending ?? 0) === 0 && (remoteState?.assets ?? 0) > 0,
+      actionLabel: '去设置',
+      action: () => setPage('settings')
+    }
+  ]
+
   const selectedScanSource = sources.find((source) => source.sourceId === scanSourceId) ?? null
   const scanRunning = scanStatus?.running === true
   const archiveRunning = archiveStatus?.running === true
   const uploadRunning = uploadStatus?.running === true
-  const remoteConnected = remoteState?.connected === true
   const scanProgressLabel = scanStatus
     ? scanStatus.total === null
       ? `正在统计文件（已发现 ${scanStatus.processed}）`
@@ -1137,6 +1186,8 @@ export function App() {
           )}
         </header>
 
+        <JobCenter onFinished={() => void refreshMeta().then(() => refreshLibrary())} />
+
         {scanRunning && (
           <div className="connection-banner">
             <span className="connection-icon">
@@ -1153,6 +1204,8 @@ export function App() {
             <button onClick={() => void cancelScan()}>取消扫描</button>
           </div>
         )}
+
+        {page === 'library' && !gameId && <SetupChecklist steps={setupSteps} />}
 
         {(page === 'library' || page === 'all') && (
           <>
@@ -1655,16 +1708,25 @@ export function App() {
                   <div className="form-grid">
                     <label className="full-width">
                       WebDAV 地址
-                      <input
-                        type="url"
-                        placeholder="https://dav.example.com/screenshots/"
-                        required
-                        autoComplete="off"
-                        value={connectForm.baseUrl}
-                        onChange={(event) =>
-                          setConnectForm({ ...connectForm, baseUrl: event.target.value })
-                        }
-                      />
+                      <div className="input-with-action">
+                        <input
+                          type="url"
+                          placeholder="https://dav.example.com/screenshots/"
+                          required
+                          autoComplete="off"
+                          value={connectForm.baseUrl}
+                          onChange={(event) =>
+                            setConnectForm({ ...connectForm, baseUrl: event.target.value })
+                          }
+                        />
+                        <button
+                          type="button"
+                          disabled={connectForm.baseUrl.trim().length === 0}
+                          onClick={() => setBrowserOpen(true)}
+                        >
+                          浏览…
+                        </button>
+                      </div>
                     </label>
                     <label>
                       用户名
@@ -2150,6 +2212,21 @@ export function App() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {browserOpen && connectForm.kind === 'webdav' && (
+        <RemoteBrowser
+          kind="webdav"
+          address={connectForm.baseUrl.trim()}
+          username={connectForm.username}
+          password={connectForm.password}
+          onClose={() => setBrowserOpen(false)}
+          onPick={(picked) => {
+            setConnectForm((current) => ({ ...current, baseUrl: picked.address }))
+            setBrowserOpen(false)
+            setToast(`已选择远端目录：${picked.address}`)
+          }}
+        />
       )}
 
       {viewer && (

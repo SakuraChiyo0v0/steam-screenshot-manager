@@ -26,6 +26,8 @@ import type {
   PreviewStatsDto,
   SteamKeyStatusDto,
   CompleteNamesResultDto,
+  JobSummaryDto,
+  RemoteBrowseDto,
   RemoteCatalogDto,
   RemoteConnectionDto,
   RemoteStateDto,
@@ -66,6 +68,7 @@ import type { AssetSummary } from '@core/library/queries'
 import { assetUrl, miniUrl, thumbnailUrl } from './asset-protocol'
 import { importLibraryIndex } from '@core/library/import'
 import type { SqliteDatabase } from '@core/db/sqlite'
+import { cancelJob, listJobs } from './jobs'
 import { getAppContext } from './app-context'
 import { applyLoginItem } from './login-item'
 import { rescheduleAutoCollect } from './auto-collect'
@@ -88,6 +91,7 @@ import { previewQueueStats } from './preview-queue'
 import {
   parseArchiveStart,
   parseAssetId,
+  parseBrowseRemote,
   parseConnectRemote,
   parseExportStart,
   parseListAssets,
@@ -105,6 +109,7 @@ import {
 } from './restore-job'
 import {
   cancelUpload,
+  browseRemote,
   connectRemote,
   disconnectRemote,
   getRemoteState,
@@ -617,6 +622,27 @@ export function registerIpcHandlers(): void {
       return null
     }
     return picked.filePaths[0] ?? null
+  })
+
+  handle(IPC_CHANNELS.syncBrowse, async (payload): Promise<RemoteBrowseDto> => {
+    const input = parseBrowseRemote(payload)
+    return browseRemote({
+      kind: input.kind,
+      address: input.address,
+      username: input.username,
+      password: input.password,
+      path: input.path
+    })
+  })
+
+  handle(IPC_CHANNELS.jobsList, (): JobSummaryDto[] => listJobs())
+
+  handle(IPC_CHANNELS.jobsCancel, (payload): JobSummaryDto[] => {
+    const input = payload as { id?: unknown } | undefined
+    if (typeof input?.id !== 'string' || input.id.length === 0) {
+      throw new AppError('IPC_INVALID_INPUT', '任务 id 不合法')
+    }
+    return cancelJob(input.id)
   })
 
   handle(IPC_CHANNELS.syncDisconnect, (): RemoteStateDto => disconnectRemote())

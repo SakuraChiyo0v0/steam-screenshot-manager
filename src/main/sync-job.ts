@@ -10,6 +10,7 @@ import { BrowserWindow } from 'electron'
 import { AppError } from '@shared/errors'
 import { IPC_EVENTS } from '@shared/ipc'
 import type {
+  RemoteBrowseDto,
   RemoteConnectionDto,
   RemoteKind,
   RemoteStateDto,
@@ -131,6 +132,62 @@ function buildStore(row: RemoteRow): RemoteClient {
 export function openRemote(): { store: RemoteClient; remoteId: string; libraryId: string } {
   const row = requireRemote()
   return { store: buildStore(row), remoteId: row.remoteId, libraryId: row.libraryId }
+}
+
+/**
+ * 连接**之前**就能用的远端浏览器。
+ *
+ * 之前要在设置里手拼 `https://host/webdav/home/xxx/yyyy`，拼错就只得到一个 404。
+ * 这里用表单里填的地址造一个临时客户端，把目录列出来让人点进去选。
+ */
+export async function browseRemote(input: {
+  kind: RemoteKind
+  address: string
+  username: string
+  password: string
+  path: string
+}): Promise<RemoteBrowseDto> {
+  let store: RemoteClient
+
+  if (input.kind === 'folder') {
+    const usable = isUsableFolderRoot(input.address)
+    if (!usable.ok) {
+      throw new AppError('LIB_PATH_INVALID', `远端目录不可用：${usable.reason}`)
+    }
+    store = new FolderRemoteClient(input.address)
+  } else {
+    const { baseUrl, rootPath } = splitDavUrl(input.address)
+    const relative = input.path
+    store = new DavClient({
+      baseUrl,
+      rootPath: relative.length === 0 ? rootPath : `${rootPath}/${relative}`,
+      credential: { username: input.username, password: input.password },
+      timeoutMs: 15_000
+    })
+  }
+
+  const list = await store.listEntries('')
+  const segments = input.path.length === 0 ? [] : input.path.split('/')
+  const breadcrumbs = [{ name: input.kind === 'folder' ? input.address : '远端根', path: '' }]
+  let accumulated = ''
+  for (const segment of segments) {
+    accumulated = accumulated.length === 0 ? segment : `${accumulated}/${segment}`
+    breadcrumbs.push({ name: segment, path: accumulated })
+  }
+  const parent = segments.length === 0 ? null : segments.slice(0, -1).join('/')
+
+  return {
+    path: input.path,
+    parent,
+    breadcrumbs,
+    entries: list.map((entry) => ({
+      name: entry.name,
+      path: entry.path,
+      isDir: entry.isDir,
+      size: entry.size,
+      modifiedAt: entry.modifiedAt
+    }))
+  }
 }
 
 export function getRemoteState(): RemoteStateDto {

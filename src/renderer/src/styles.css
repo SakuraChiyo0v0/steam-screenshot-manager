@@ -1634,3 +1634,144 @@ dialog::backdrop {
   font-size: 0.94em;
   overflow-wrap: anywhere;
 }
+
+
+/* ---------------- 任务条 ---------------- */
+.job-center {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.job-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  background: var(--surface, rgba(255, 255, 255, 0.72));
+}
+.job-row.running .job-icon { color: var(--accent, #2f855a); }
+.job-row.failed { border-color: rgba(197, 48, 48, 0.35); }
+.job-main { flex: 1; min-width: 0; }
+.job-main strong { display: block; font-size: 0.95rem; }
+.job-main p { margin: 2px 0 0; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-bar {
+  margin-top: 6px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.job-bar span { display: block; height: 100%; border-radius: 999px; background: var(--accent, #2f855a); }
+
+/* ---------------- 远端目录浏览器 ---------------- */
+dialog.remote-browser {
+  width: min(680px, 92vw);
+  max-height: 78vh;
+  padding: 0;
+  border-radius: 18px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
+  overflow: hidden;
+}
+.remote-browser-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 10px;
+}
+.remote-browser-head h2 { margin: 0 0 4px; font-size: 1.05rem; }
+.remote-browser-head p { margin: 0; font-size: 0.82rem; }
+.remote-browser-path {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 18px 10px;
+  font-size: 0.85rem;
+}
+.remote-browser-path .crumb button {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: inherit;
+  border-radius: 6px;
+}
+.remote-browser-path .crumb button:hover { background: rgba(0, 0, 0, 0.06); }
+.remote-browser-list {
+  max-height: 46vh;
+  overflow: auto;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  padding: 6px 10px;
+}
+.remote-browser-list ul { list-style: none; margin: 0; padding: 0; }
+.remote-browser-list p { padding: 14px 8px; margin: 0; }
+.remote-browser-list .entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.remote-browser-list .entry:hover:not(:disabled) { background: rgba(0, 0, 0, 0.05); }
+.remote-browser-list .entry:disabled { opacity: 0.55; cursor: default; }
+.remote-browser-list .entry-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-browser-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  font-size: 0.82rem;
+}
+
+/* 输入框右侧的次要动作（例如 WebDAV 地址旁的「浏览…」） */
+.input-with-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.input-with-action input { flex: 1; min-width: 0; }
+.input-with-action button { white-space: nowrap; }
+
+/* ---------------- 下一步清单 ---------------- */
+.setup-checklist {
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  background: var(--surface, rgba(255, 255, 255, 0.7));
+}
+.setup-checklist header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.setup-checklist h2 { margin: 0 0 4px; font-size: 1rem; }
+.setup-checklist p { margin: 0; font-size: 0.82rem; }
+.setup-checklist ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.setup-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+.setup-checklist li.next { background: rgba(47, 133, 90, 0.08); }
+.setup-checklist li.done { opacity: 0.62; }
+.setup-checklist .step-mark { display: flex; }
+.setup-checklist li.done .step-mark { color: var(--accent, #2f855a); }
+.setup-checklist .step-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.setup-checklist .step-main strong { font-size: 0.9rem; }
+.setup-checklist .step-main small { font-size: 0.78rem; }

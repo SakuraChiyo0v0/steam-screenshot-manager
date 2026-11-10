@@ -326,6 +326,40 @@ export interface CapabilityItemDto {
   readonly detail: string
 }
 
+/** 统一任务视图里的一项（扫描 / 归档 / 备份 / 恢复）。 */
+export interface JobSummaryDto {
+  readonly id: string
+  readonly title: string
+  readonly running: boolean
+  readonly phase: string | null
+  readonly processed: number
+  readonly total: number | null
+  readonly currentFile: string | null
+  readonly startedAt: string | null
+  readonly finishedAt: string | null
+  readonly errorCode: string | null
+  readonly errorMessage: string | null
+}
+
+/** 远端目录浏览器里的一项。 */
+export interface RemoteEntryDto {
+  readonly name: string
+  readonly path: string
+  readonly isDir: boolean
+  readonly size: number | null
+  readonly modifiedAt: string | null
+}
+
+export interface RemoteBrowseDto {
+  /** 相对浏览根的当前路径；根为空串 */
+  readonly path: string
+  /** 上一级；已经是根时为 null */
+  readonly parent: string | null
+  /** 从根到当前的每一层，供面包屑 */
+  readonly breadcrumbs: readonly { readonly name: string; readonly path: string }[]
+  readonly entries: readonly RemoteEntryDto[]
+}
+
 /** 远端种类：WebDAV 服务，或一个普通文件夹（本机盘 / NAS 共享 / 已映射的网络盘）。 */
 export type RemoteKind = 'webdav' | 'folder'
 

@@ -39,6 +39,8 @@ import type {
   GalleryPageDto,
   LibraryRootState,
   LibraryStatsDto,
+  JobSummaryDto,
+  RemoteBrowseDto,
   RemoteKind,
   RegisteredSourceDto,
   ScanProgressDto,
@@ -92,6 +94,11 @@ export const IPC_CHANNELS = {
   syncConnect: 'sync:connect',
   /** 选择"文件夹远端"的目录 */
   syncPickFolder: 'sync:pickFolder',
+  /** 浏览远端目录（连接前就能用，避免手拼地址） */
+  syncBrowse: 'sync:browse',
+  /** 统一任务视图：四个任务的状态与取消 */
+  jobsList: 'jobs:list',
+  jobsCancel: 'jobs:cancel',
   syncDisconnect: 'sync:disconnect',
   syncState: 'sync:state',
   uploadStart: 'upload:start',
@@ -162,6 +169,9 @@ export const EXPOSED_METHODS = [
   'getExportStatus',
   'connectRemote',
   'pickRemoteFolder',
+  'browseRemote',
+  'listJobs',
+  'cancelJob',
   'disconnectRemote',
   'getRemoteState',
   'startUpload',
@@ -241,6 +251,9 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   getExportStatus: IPC_CHANNELS.exportStatus,
   connectRemote: IPC_CHANNELS.syncConnect,
   pickRemoteFolder: IPC_CHANNELS.syncPickFolder,
+  browseRemote: IPC_CHANNELS.syncBrowse,
+  listJobs: IPC_CHANNELS.jobsList,
+  cancelJob: IPC_CHANNELS.jobsCancel,
   disconnectRemote: IPC_CHANNELS.syncDisconnect,
   getRemoteState: IPC_CHANNELS.syncState,
   startUpload: IPC_CHANNELS.uploadStart,
@@ -312,6 +325,16 @@ export interface ReconcileResultDto {
 
 export interface ExportDirStateDto {
   readonly targetDir: string | null
+}
+
+export interface BrowseRemotePayload {
+  readonly kind?: RemoteKind
+  readonly baseUrl?: string
+  readonly username?: string
+  readonly password?: string
+  readonly folderPath?: string
+  /** 相对浏览根的路径；空表示根 */
+  readonly path?: string
 }
 
 export interface ConnectRemotePayload {
@@ -396,6 +419,11 @@ export interface RendererApi {
   connectRemote(payload: ConnectRemotePayload): Promise<IpcResult<RemoteConnectionDto>>
   /** 选择文件夹远端的目录（取消返回 null） */
   pickRemoteFolder(): Promise<IpcResult<string | null>>
+  /** 连接前浏览远端目录：点进去选，不用手拼地址 */
+  browseRemote(payload: BrowseRemotePayload): Promise<IpcResult<RemoteBrowseDto>>
+  /** 统一任务视图 */
+  listJobs(): Promise<IpcResult<JobSummaryDto[]>>
+  cancelJob(payload: { readonly id: string }): Promise<IpcResult<JobSummaryDto[]>>
   disconnectRemote(): Promise<IpcResult<RemoteStateDto>>
   getRemoteState(): Promise<IpcResult<RemoteStateDto>>
   startUpload(payload?: UploadStartPayload): Promise<IpcResult<UploadSummaryDto>>

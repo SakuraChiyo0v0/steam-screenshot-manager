@@ -221,6 +221,26 @@ export function parseExportStart(value: unknown): {
   }
 }
 
+export function parseBrowseRemote(value: unknown): {
+  kind: RemoteKind
+  address: string
+  username: string
+  password: string
+  path: string
+} {
+  const parsed = parseConnectRemote(value)
+  const payload = asObject(value, '远端浏览参数')
+  const rawPath = payload['path']
+  if (rawPath !== undefined && typeof rawPath !== 'string') {
+    throw new AppError('IPC_INVALID_INPUT', '浏览路径不合法')
+  }
+  const path = (rawPath ?? '').trim().replace(/^\/+|\/+$/g, '')
+  if (path.split('/').some((segment) => segment === '..')) {
+    throw new AppError('LIB_PATH_INVALID', '浏览路径不允许包含上级目录')
+  }
+  return { kind: parsed.kind, address: parsed.address, username: parsed.username, password: parsed.password, path }
+}
+
 export function parseConnectRemote(value: unknown): {
   kind: RemoteKind
   /** WebDAV 是地址，文件夹远端是绝对路径 */

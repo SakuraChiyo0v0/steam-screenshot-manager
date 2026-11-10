@@ -24,6 +24,18 @@ export interface RemoteListing {
   readonly hrefs: readonly string[]
 }
 
+/** 目录里的一项（选远端目录的浏览器用）。 */
+export interface RemoteEntry {
+  /** 最后一段名字（不编码） */
+  readonly name: string
+  /** 相对远端根的路径；根自己不带进来 */
+  readonly path: string
+  readonly isDir: boolean
+  /** 文件字节数；目录为 null */
+  readonly size: number | null
+  readonly modifiedAt: string | null
+}
+
 export interface RemoteClient {
   /** 逐级创建集合；已存在视为成功 */
   ensureCollection(relativePath: string): Promise<void>
@@ -34,6 +46,11 @@ export interface RemoteClient {
   getText(relativePath: string): Promise<string | null>
   downloadToFile(relativePath: string, targetPath: string): Promise<RemoteDownload | null>
   list(relativePath: string): Promise<RemoteListing>
+  /**
+   * 列目录并带上每项的类型与大小，供"选远端目录"的界面用。
+   * 目录不存在时返回空数组（不抛错），由界面显示"这里还没有内容"。
+   */
+  listEntries(relativePath: string): Promise<RemoteEntry[]>
   deleteFile(relativePath: string): Promise<boolean>
   /** 删除集合（探测残留、测试目录用） */
   deleteCollection(relativePath: string): Promise<boolean>

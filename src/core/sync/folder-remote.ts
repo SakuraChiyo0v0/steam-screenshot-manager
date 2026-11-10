@@ -12,9 +12,10 @@
  */
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { copyWithHash } from '../library/archive'
 import { resolveAssetPath } from '../library/asset-paths'
-import type { RemoteClient } from './remote-client'
+import type { RemoteClient, RemoteEntry } from './remote-client'
 
 /** 往目标写文件时的临时后缀：同目录改名保证原子性。 */
 const TEMP_SUFFIX = '.ssm-tmp'
@@ -108,6 +109,33 @@ export class FolderRemoteClient implements RemoteClient {
     } catch {
       return { status: 404, hrefs: [] }
     }
+  }
+
+  async listEntries(relativePath: string): Promise<RemoteEntry[]> {
+    const directory = this.absolute(relativePath)
+    let entries
+    try {
+      entries = readdirSync(directory, { withFileTypes: true })
+    } catch {
+      return []
+    }
+    const prefix = relativePath.length === 0 ? '' : `${relativePath}/`
+    return entries.map((entry) => {
+      const path = `${prefix}${entry.name}`
+      if (entry.isDirectory()) {
+        return { name: entry.name, path, isDir: true, size: null, modifiedAt: null }
+      }
+      let size: number | null = null
+      let modifiedAt: string | null = null
+      try {
+        const info = statSync(join(directory, entry.name))
+        size = info.size
+        modifiedAt = info.mtime.toISOString()
+      } catch {
+        // 读不到大小就当未知，不影响列举
+      }
+      return { name: entry.name, path, isDir: false, size, modifiedAt }
+    })
   }
 
   async deleteFile(relativePath: string): Promise<boolean> {
