@@ -13,9 +13,9 @@
 import { AppError } from '@shared/errors'
 import { listSources } from '@core/library/index-writer'
 import { getAppContext } from './app-context'
-import { startScan, getScanStatus } from './scan-job'
-import { runUpload, getUploadStatus, remoteTargets } from './sync-job'
-import { scanRemoteCatalog, runRestore, getRestoreStatus } from './restore-job'
+import { cancelScan, startScan, getScanStatus } from './scan-job'
+import { cancelUpload, getUploadStatus, remoteTargets, runUpload } from './sync-job'
+import { cancelRestore, getRestoreStatus, runRestore, scanRemoteCatalog } from './restore-job'
 import {
   getSteamScreenshotTargets,
   previewSteamScreenshotRestore,
@@ -70,22 +70,71 @@ let background: { running: boolean; last: SyncAllResult | null; error: string | 
  * 渲染层一直在等同一个 invoke，界面看起来就是卡死。现在只负责启动，
  * 进度交给任务条，界面靠轮询任务状态自然更新。
  */
+/** 进度卡住多久算"网络挂了"：超过这个时间没变化就主动停掉，别让它无限等。 */
+const STALL_LIMIT_MS = 3 * 60 * 1000
+
+function makeWatchdog(): { check: () => boolean; stop: () => void } {
+  let lastSignature = ''
+  let lastChangeAt = Date.now()
+  const timer = setInterval(() => {
+    const scan = getScanStatus()
+    const upload = getUploadStatus()
+    const restore = getRestoreStatus()
+    const signature = [
+      scan.running ? `s:${scan.processed}` : 's:-',
+      upload.running ? `u:${upload.processed}` : 'u:-',
+      restore.running ? `r:${restore.processed}` : 'r:-'
+    ].join('|')
+    if (signature !== lastSignature) {
+      lastSignature = signature
+      lastChangeAt = Date.now()
+      return
+    }
+    if (Date.now() - lastChangeAt < STALL_LIMIT_MS) return
+    // 卡住：把还在跑的任务都请求停止，交给上层如实报告
+    if (scan.running) cancelScan()
+    if (upload.running) cancelUpload()
+    if (restore.running) cancelRestore()
+  }, 10_000)
+  timer.unref?.()
+  return {
+    check: () => Date.now() - lastChangeAt >= STALL_LIMIT_MS,
+    stop: () => clearInterval(timer)
+  }
+}
+
 export function startSyncAll(): { started: boolean; error?: string } {
   if (background.running) {
     return { started: false, error: '同步已经在跑了' }
   }
   background = { ...background, running: true, error: null }
   void (async () => {
+    const watchdog = makeWatchdog()
     try {
       background = { running: true, last: background.last, error: null }
       const result = await runSyncAll()
-      background = { running: false, last: result, error: null }
+      const stalled = watchdog.check()
+      background = {
+        running: false,
+        last: {
+          ...result,
+          steps: stalled
+            ? [
+                ...result.steps,
+                { step: 'push', ok: false, count: 0, detail: '有几步长时间没有进展，已停止；检查网络或备份盘是否掉线' }
+              ]
+            : result.steps
+        },
+        error: null
+      }
     } catch (error) {
       background = {
         running: false,
         last: background.last,
         error: error instanceof Error ? error.message : String(error)
       }
+    } finally {
+      watchdog.stop()
     }
   })()
   return { started: true }

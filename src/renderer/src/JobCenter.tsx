@@ -61,8 +61,26 @@ export function JobCenter({ onFinished }: { onFinished?: () => void }) {
     }
   }
 
+  const stopAll = async () => {
+    setBusy(true)
+    try {
+      for (const job of visible.filter((item) => item.running)) {
+        await call((api) => api.cancelJob({ id: job.id })).catch(() => undefined)
+      }
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className="job-center" aria-label="任务">
+      {visible.some((job) => job.running) && (
+        <div className="job-row">
+          <span className="job-main muted small">有任务在跑；如果它一直不动，可以停掉重来。</span>
+          <button type="button" disabled={busy} onClick={() => void stopAll()}>全部停止</button>
+        </div>
+      )}
       {visible.map((job) => {
         const percent =
           job.total && job.total > 0 ? Math.min(100, Math.round((job.processed / job.total) * 100)) : null
