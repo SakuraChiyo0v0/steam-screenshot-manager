@@ -19,6 +19,7 @@ import { listRemoteRecords, planRestoreGames, restoreAssets } from '@core/sync/r
 import type { RemoteRecordEntry } from '@core/sync/restore'
 import type { RemoteClient } from '@core/sync/remote-client'
 import { getAppContext } from './app-context'
+import { ensureLibraryRoot } from './sync-job'
 import { openRemote } from './sync-job'
 
 let restoreJob: { cancelRequested: boolean } | null = null
@@ -58,18 +59,15 @@ interface RemoteContext {
 }
 
 function buildRemoteContext(): RemoteContext {
-  const { database } = getAppContext()
-  const settings = readSettings(database.db)
-  if (!settings.libraryRoot) {
-    throw new AppError('LIB_PATH_INVALID', '尚未选择图库目录，恢复需要先确定本地图库位置')
-  }
+  // 没有配置本地目录时用内部默认位置（用户数据目录下），不再逼用户先选一个
+  const libraryRoot = ensureLibraryRoot()
 
   // WebDAV 与文件夹远端在这里没有区别：都是 RemoteClient
   const remote = openRemote()
   return {
     client: remote.store,
     libraryId: remote.libraryId,
-    libraryRoot: settings.libraryRoot
+    libraryRoot
   }
 }
 
