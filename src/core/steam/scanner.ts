@@ -287,6 +287,7 @@ export async function scanSource(request: ScanRequest): Promise<ScanOutcome> {
   const games = new Map<string, ScanGame>()
   const pending: PendingFile[] = []
   const failures: ScanFailure[] = []
+  let enumerated = 0
   const scannedAccounts: string[] = []
 
   const wantedAccounts =
@@ -342,6 +343,12 @@ export async function scanSource(request: ScanRequest): Promise<ScanOutcome> {
       }
 
       for (const fileName of listFileNames(screenshotsDir)) {
+        // 网络盘上每个 stat 都是一次往返；每 120 个让出一次事件循环，
+        // 否则主进程会被这串同步调用占住，界面点什么都像卡死。
+        enumerated += 1
+        if (enumerated % 120 === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve))
+        }
         const ext = extname(fileName).toLowerCase()
         if (!SUPPORTED_IMAGE_EXTENSIONS.includes(ext)) {
           continue

@@ -12,7 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync , statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { AppError } from '@shared/errors'
@@ -260,6 +260,8 @@ export interface RestoreOptions {
   readonly gameKeys?: readonly string[]
   readonly onProgress?: (progress: RestoreProgress) => void
   readonly shouldCancel?: () => boolean
+  /** 同时下载几条；网络盘上串行等 IO 是"卡得要命"的主因，默认 6 */
+  readonly concurrency?: number
 }
 
 function upsertGame(
@@ -438,10 +440,18 @@ export async function restoreAssets(
   }
   report(null)
 
-  for (const record of pendingAll) {
-    if (options.shouldCancel?.() || abortedByAuth) {
-      break
-    }
+  // 并发下载：网络盘（SMB/WebDAV）上每个文件都有固定的往返开销，
+  // 串行一条一条等，6953 张就是十几分钟；开几条并行能直接压掉大部分等待。
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? 6, 16))
+  let cursor = 0
+
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      if (options.shouldCancel?.() || abortedByAuth) return
+      const index = cursor
+      cursor += 1
+      if (index >= pendingAll.length) return
+      const record = pendingAll[index]!
 
     try {
       const relativePath = managedRelativePath({
@@ -453,8 +463,34 @@ export async function restoreAssets(
       const absolutePath = join(libraryRoot, relativePath)
       const verifiedAt = new Date().toISOString()
       const existingFile = existsSync(absolutePath)
-      // 只有在内容确实可用时才允许"跳过"或补记录
-      const reusable = existingFile && (await verifyLocalCopy(absolutePath, record.bytes, record.sha256))
+      // 只有在内容确实可用时才允许"跳过"或补记录。
+      // 快速路径：数据库里已登记过这份副本（上传/恢复时校验过），且文件大小一致，
+      // 就不再为了确认把整个文件重读一遍哈希——网络盘上这一步是纯浪费。
+      const knownCopy =
+        existingFile && record.bytes > 0
+          ? (db
+              .prepare(
+                `SELECT 1 AS ok FROM local_copies lc
+                   JOIN assets a ON a.asset_id = lc.asset_id
+                  WHERE a.account_key = ? AND a.game_key = ? AND a.sha256 = ?
+                    AND lc.library_root = ? AND lc.present = 1 AND lc.bytes = ?
+                  LIMIT 1`
+              )
+              .get(record.accountKey, record.gameKey, record.sha256, libraryRoot, record.bytes) as
+              | { ok: number }
+              | undefined)
+          : undefined
+      const reusable =
+        existingFile &&
+        (knownCopy
+          ? (() => {
+              try {
+                return statSync(absolutePath).size === record.bytes
+              } catch {
+                return false
+              }
+            })()
+          : await verifyLocalCopy(absolutePath, record.bytes, record.sha256))
 
       if (reusable) {
         // 先保证游戏行存在，再写依赖它的资产行
@@ -565,9 +601,12 @@ export async function restoreAssets(
       }
     }
 
-    processed += 1
-    report(record.originalFilename)
+      processed += 1
+      report(record.originalFilename)
+    }
   }
+
+  await Promise.all(Array.from({ length: concurrency }, () => worker()))
 
   return {
     total: pendingAll.length,
