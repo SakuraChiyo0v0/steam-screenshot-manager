@@ -11,6 +11,7 @@ import { AppError } from '@shared/errors'
 import { IPC_EVENTS } from '@shared/ipc'
 import type {
   RemoteBrowseDto,
+  SyncSummaryDto,
   RemoteConnectionDto,
   RemoteKind,
   RemoteStateDto,
@@ -39,6 +40,7 @@ import {
   type CapabilityItem
 } from '@core/sync/webdav'
 import { FolderRemoteClient, isUsableFolderRoot } from '@core/sync/folder-remote'
+import { checkBackupTarget } from '@core/sync/remote-target'
 import type { RemoteClient } from '@core/sync/remote-client'
 import { planUpload, remoteStatusCounts, uploadAssets } from '@core/sync/upload'
 import { getAppContext } from './app-context'
@@ -190,6 +192,44 @@ export async function browseRemote(input: {
   }
 }
 
+
+/**
+ * 同步链路总览。
+ *
+ * 各表分别回答一个问题：assets=索引里有多少、local_copies=图库里有几张、
+ * remote_objects=远端各状态有多少。界面按「来源 → 图库 → 远端」排开显示，
+ * 用户不用再猜某个数字是哪一边的。
+ */
+export function syncSummary(): SyncSummaryDto {
+  const { database } = getAppContext()
+  const settings = readSettings(database.db)
+  const row = readRemoteRow()
+
+  const localRow = database.db
+    .prepare('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes FROM local_copies WHERE present = 1')
+    .get() as { n: number; bytes: number }
+  const indexedRow = database.db.prepare('SELECT COUNT(*) AS n FROM assets').get() as { n: number }
+
+  const counts = row ? remoteStatusCounts(database.db, row.remoteId) : { verified: 0, pending: 0, failed: 0 }
+  const lastRow = database.db
+    .prepare("SELECT MAX(updated_at) AS at FROM remote_objects WHERE publish_status = 'verified'")
+    .get() as { at: string | null }
+
+  return {
+    localCount: Number(localRow.n),
+    localBytes: Number(localRow.bytes),
+    indexedCount: Number(indexedRow.n),
+    verified: counts.verified,
+    pending: counts.pending,
+    failed: counts.failed,
+    remoteCount: counts.verified,
+    lastBackupAt: lastRow.at,
+    libraryRoot: settings.libraryRoot,
+    remoteKind: row?.kind ?? null,
+    remoteBaseUrl: row?.baseUrl ?? null
+  }
+}
+
 export function getRemoteState(): RemoteStateDto {
   const { database } = getAppContext()
   const settings = readSettings(database.db)
@@ -266,6 +306,15 @@ export async function connectRemote(input: {
     const usable = isUsableFolderRoot(address)
     if (!usable.ok) {
       throw new AppError('LIB_PATH_INVALID', `远端目录不可用：${usable.reason}`)
+    }
+    // 备份目标不能就是图库目录本身，否则会把原图复制进它自己的子目录
+    const problem = checkBackupTarget({
+      kind: 'folder',
+      address,
+      libraryRoot: readSettings(database.db).libraryRoot
+    })
+    if (problem) {
+      throw new AppError('LIB_PATH_INVALID', problem)
     }
     store = new FolderRemoteClient(address)
     notes.push({ name: '远端类型', ok: true, detail: `文件夹：${address}` })

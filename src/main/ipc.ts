@@ -28,6 +28,7 @@ import type {
   CompleteNamesResultDto,
   JobSummaryDto,
   RemoteBrowseDto,
+  SyncSummaryDto,
   RemoteCatalogDto,
   RemoteConnectionDto,
   RemoteStateDto,
@@ -111,6 +112,7 @@ import {
   cancelUpload,
   browseRemote,
   connectRemote,
+  syncSummary,
   disconnectRemote,
   getRemoteState,
   getUploadStatus,
@@ -634,6 +636,8 @@ export function registerIpcHandlers(): void {
       path: input.path
     })
   })
+
+  handle(IPC_CHANNELS.syncSummary, (): SyncSummaryDto => syncSummary())
 
   handle(IPC_CHANNELS.jobsList, (): JobSummaryDto[] => listJobs())
 

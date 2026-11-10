@@ -326,6 +326,31 @@ export interface CapabilityItemDto {
   readonly detail: string
 }
 
+/**
+ * 同步链路总览：一眼看清"哪边到哪边"。
+ *
+ * 三份数据分别是：Steam 来源 → 本机图库 → 远端备份。
+ * 恢复是反方向：远端 → 图库，图库 → Steam。
+ */
+export interface SyncSummaryDto {
+  /** 本机图库里有副本的资产数 */
+  readonly localCount: number
+  readonly localBytes: number
+  /** 索引里的资产总数（含尚未归档的） */
+  readonly indexedCount: number
+  /** 远端已校验通过 */
+  readonly verified: number
+  /** 待备份（含未尝试与上传中） */
+  readonly pending: number
+  readonly failed: number
+  /** 远端记录里能读到的资产数（来自本机记录表，不实时扫描远端） */
+  readonly remoteCount: number
+  readonly lastBackupAt: string | null
+  readonly libraryRoot: string | null
+  readonly remoteKind: RemoteKind | null
+  readonly remoteBaseUrl: string | null
+}
+
 /** 统一任务视图里的一项（扫描 / 归档 / 备份 / 恢复）。 */
 export interface JobSummaryDto {
   readonly id: string

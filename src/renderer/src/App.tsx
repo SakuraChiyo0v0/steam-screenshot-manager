@@ -35,6 +35,7 @@ import type {
   PreviewStatsDto,
   SteamKeyStatusDto,
   RemoteStateDto,
+  SyncSummaryDto,
   UploadStatusDto,
   RegisteredSourceDto,
   ScanProgressDto,
@@ -67,7 +68,9 @@ import { JobCenter } from './JobCenter'
 import { SetupChecklist, type SetupStep } from './SetupChecklist'
 import { describeError } from '@shared/messages'
 import { Diagnostics } from './Diagnostics'
-import { SteamScreenshotRestore } from './SteamScreenshotRestore'
+import { RemoteToLibrary } from './RemoteToLibrary'
+import { LibraryToSteam } from './LibraryToSteam'
+import { SyncOverview } from './SyncOverview'
 
 type Page = 'library' | 'all' | 'sync' | 'settings'
 type Theme = 'dark' | 'light' | 'system'
@@ -187,6 +190,7 @@ export function App() {
   const [viewer, setViewer] = useState<{ items: ViewerItem[]; index: number } | null>(null)
   const [toast, setToast] = useState('')
   const [remoteState, setRemoteState] = useState<RemoteStateDto | null>(null)
+  const [syncSummary, setSyncSummary] = useState<SyncSummaryDto | null>(null)
   const [uploadStatus, setUploadStatus] = useState<UploadStatusDto | null>(null)
   const [connectForm, setConnectForm] = useState<{
     kind: 'webdav' | 'folder'
@@ -356,7 +360,12 @@ export function App() {
   const refreshRemoteState = useCallback(async () => {
     if (!hasApi) return
     try {
-      setRemoteState(await call((api) => api.getRemoteState()))
+      const [state, summary] = await Promise.all([
+        call((api) => api.getRemoteState()),
+        call((api) => api.getSyncSummary())
+      ])
+      setRemoteState(state)
+      setSyncSummary(summary)
     } catch {
       /* 远端状态读取失败不影响其它功能 */
     }
@@ -1462,8 +1471,9 @@ export function App() {
         )}
 
         {page === 'sync' && (
-          <>
-            <SteamScreenshotRestore />
+          <div className="sync-stack">
+            <SyncOverview summary={syncSummary} />
+
             {!remoteConnected ? (
               <div className="connection-banner">
                 <span className="connection-icon">
@@ -1471,91 +1481,95 @@ export function App() {
                 </span>
                 <div>
                   <h2>还没有连接远端存储</h2>
-                  <p>使用自己的 WebDAV。连接后可以先备份，再在另一台电脑恢复。</p>
+                  <p>先把图库准备到本机，再连一个 WebDAV 或 NAS 上的文件夹做备份。</p>
                 </div>
                 <button onClick={() => navigate('settings')}>
-                  配置存储
+                  去设置
                   <ArrowRightIcon size={17} />
                 </button>
               </div>
             ) : (
-              <>
-                <div className="connection-banner">
-                  <span className="connection-icon">
-                    <CloudArrowUpIcon size={29} />
-                  </span>
+              <section className="settings-card direction-card">
+                <div className="section-heading">
                   <div>
-                    <h2>{remoteState?.baseUrl}</h2>
+                    <h2>
+                      <span className="dir-badge from">本机图库</span>
+                      <span className="dir-arrow">→</span>
+                      <span className="dir-badge to">远端备份</span>
+                    </h2>
                     <p>
-                      图库 {remoteState?.libraryId} · 上次检查{' '}
-                      {remoteState?.lastCheckAt
-                        ? remoteState.lastCheckAt.slice(0, 16).replace('T', ' ')
-                        : '—'}
-                      （{remoteState?.lastCheckStatus ?? '未知'}）
+                      {remoteState?.baseUrl}
+                      {remoteState?.kind === 'folder' ? '（文件夹）' : '（WebDAV）'}
                     </p>
                   </div>
                   {uploadRunning ? (
-                    <button onClick={() => void cancelUpload()}>暂停</button>
+                    <button onClick={() => void cancelUpload()}>停止</button>
                   ) : (
                     <button
                       className="primary"
                       disabled={!remoteState?.libraryRoot}
                       onClick={() => void startUpload(false)}
                     >
-                      开始备份
+                      {syncSummary && syncSummary.pending > 0
+                        ? `备份 ${syncSummary.pending} 张`
+                        : '检查并备份'}
                       <ArrowRightIcon size={17} />
                     </button>
                   )}
                 </div>
-                {uploadRunning ? (
-                  <div className="error-banner inline" role="status">
-                    <ArrowsClockwiseIcon size={20} />
-                    <div>
-                      <strong>正在上传</strong>
-                      <p>
-                        {uploadStatus?.total === null
-                          ? `正在规划（已处理 ${uploadStatus?.processed ?? 0}）`
-                          : `${uploadStatus?.processed ?? 0} / ${uploadStatus?.total ?? 0}`}
-                        {' · '}已校验 {uploadStatus?.verified ?? 0}
-                        {uploadStatus?.failed ? ` · 失败 ${uploadStatus.failed}` : ''}
-                        {uploadStatus?.currentFile ? ` · ${uploadStatus.currentFile}` : ''}
-                      </p>
-                    </div>
+
+                <div className="stat-row">
+                  <div className="stat">
+                    <span className="muted">已备份</span>
+                    <strong>{syncSummary?.verified ?? 0}</strong>
                   </div>
-                ) : null}
-                <div className="task-panel">
-                  <div className="task-toolbar">
-                    <div className="tabs">
-                      <button className="active">全部 {remoteState?.assets ?? 0}</button>
-                      <button>已备份 {remoteState?.verified ?? 0}</button>
-                      <button>待备份 {remoteState?.pending ?? 0}</button>
-                      <button>失败 {remoteState?.failed ?? 0}</button>
-                    </div>
-                    <div className="actions">
-                      <button
-                        disabled={uploadRunning || (remoteState?.failed ?? 0) === 0}
-                        onClick={() => void startUpload(true)}
-                      >
-                        重试失败项
-                      </button>
-                      <button onClick={() => void disconnectRemoteAction()}>断开连接</button>
-                    </div>
+                  <div className="stat">
+                    <span className="muted">待备份</span>
+                    <strong>{syncSummary?.pending ?? 0}</strong>
                   </div>
-                  <p className="panel-note">
-                    只有「上传对象 → 读回校验哈希 → 发布记录 → 读回校验记录」全部通过，才会记为已备份。本机删除不会传播到远端。
-                  </p>
-                  {!remoteState?.libraryRoot ? (
-                    <p className="panel-note">
-                      还没有本地图库目录：请先在设置里选择目录并完成归档，再开始备份。
-                    </p>
-                  ) : null}
-                  {uploadStatus?.errorMessage ? (
-                    <p className="panel-note">上次错误：{uploadStatus.errorMessage}</p>
-                  ) : null}
+                  <div className="stat">
+                    <span className="muted">失败</span>
+                    <strong className={syncSummary?.failed ? 'danger' : ''}>
+                      {syncSummary?.failed ?? 0}
+                    </strong>
+                  </div>
+                  <div className="stat">
+                    <span className="muted">图库里共</span>
+                    <strong>{syncSummary?.localCount ?? 0}</strong>
+                  </div>
                 </div>
-              </>
+
+                <p className="panel-note">
+                  只有「上传 → 读回校验 → 发布记录 → 读回校验」全部通过才算已备份。
+                  {syncSummary?.lastBackupAt
+                    ? ` 最近一次成功：${new Date(syncSummary.lastBackupAt).toLocaleString()}。`
+                    : ''}
+                </p>
+                {!remoteState?.libraryRoot && (
+                  <p className="panel-note">还没有本机图库：先在设置里选目录并归档，再备份。</p>
+                )}
+                {uploadStatus?.errorMessage && (
+                  <p className="panel-note">上次错误：{describeError(uploadStatus.errorMessage)}</p>
+                )}
+
+                <div className="form-footer">
+                  <span>断开只删本机凭据，远端已有的备份不受影响。</span>
+                  <div className="actions">
+                    <button
+                      disabled={uploadRunning || (syncSummary?.failed ?? 0) === 0}
+                      onClick={() => void startUpload(true)}
+                    >
+                      重试失败项
+                    </button>
+                    <button onClick={() => void disconnectRemoteAction()}>断开远端</button>
+                  </div>
+                </div>
+              </section>
             )}
-          </>
+
+            <RemoteToLibrary onDone={() => void refreshRemoteState().then(() => refreshLibrary())} />
+            <LibraryToSteam onDone={() => void refreshMeta()} />
+          </div>
         )}
         {page === 'settings' && (
           <div className="settings-stack">

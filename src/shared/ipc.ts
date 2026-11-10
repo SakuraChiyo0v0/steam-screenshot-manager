@@ -41,6 +41,7 @@ import type {
   LibraryStatsDto,
   JobSummaryDto,
   RemoteBrowseDto,
+  SyncSummaryDto,
   RemoteKind,
   RegisteredSourceDto,
   ScanProgressDto,
@@ -96,6 +97,8 @@ export const IPC_CHANNELS = {
   syncPickFolder: 'sync:pickFolder',
   /** 浏览远端目录（连接前就能用，避免手拼地址） */
   syncBrowse: 'sync:browse',
+  /** 同步链路总览（来源 → 图库 → 远端） */
+  syncSummary: 'sync:summary',
   /** 统一任务视图：四个任务的状态与取消 */
   jobsList: 'jobs:list',
   jobsCancel: 'jobs:cancel',
@@ -170,6 +173,7 @@ export const EXPOSED_METHODS = [
   'connectRemote',
   'pickRemoteFolder',
   'browseRemote',
+  'getSyncSummary',
   'listJobs',
   'cancelJob',
   'disconnectRemote',
@@ -252,6 +256,7 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   connectRemote: IPC_CHANNELS.syncConnect,
   pickRemoteFolder: IPC_CHANNELS.syncPickFolder,
   browseRemote: IPC_CHANNELS.syncBrowse,
+  getSyncSummary: IPC_CHANNELS.syncSummary,
   listJobs: IPC_CHANNELS.jobsList,
   cancelJob: IPC_CHANNELS.jobsCancel,
   disconnectRemote: IPC_CHANNELS.syncDisconnect,
@@ -421,6 +426,8 @@ export interface RendererApi {
   pickRemoteFolder(): Promise<IpcResult<string | null>>
   /** 连接前浏览远端目录：点进去选，不用手拼地址 */
   browseRemote(payload: BrowseRemotePayload): Promise<IpcResult<RemoteBrowseDto>>
+  /** 同步链路总览：来源 → 图库 → 远端，一眼看清哪边到哪边 */
+  getSyncSummary(): Promise<IpcResult<SyncSummaryDto>>
   /** 统一任务视图 */
   listJobs(): Promise<IpcResult<JobSummaryDto[]>>
   cancelJob(payload: { readonly id: string }): Promise<IpcResult<JobSummaryDto[]>>

@@ -1775,3 +1775,69 @@ dialog.remote-browser {
 .setup-checklist .step-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .setup-checklist .step-main strong { font-size: 0.9rem; }
 .setup-checklist .step-main small { font-size: 0.78rem; }
+
+/* ---------------- 同步链路图 ---------------- */
+.sync-overview {
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+  background: var(--surface, rgba(255, 255, 255, 0.7));
+}
+.sync-overview .flow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sync-overview .flow-node {
+  flex: 1 1 150px;
+  min-width: 140px;
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.035);
+}
+.sync-overview .flow-node strong { font-size: 0.9rem; }
+.sync-overview .flow-count { font-size: 1.3rem; font-weight: 650; line-height: 1.15; }
+.sync-overview .flow-node small { font-size: 0.76rem; }
+.sync-overview .flow-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 82px;
+  color: var(--muted, rgba(0, 0, 0, 0.55));
+  font-size: 0.74rem;
+  text-align: center;
+}
+.sync-overview .flow-note { margin: 12px 0 0; font-size: 0.8rem; line-height: 1.5; }
+
+/* 方向卡片标题里的「A → B」徽标 */
+.direction-card .section-heading h2 { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+.dir-badge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.dir-badge.from { background: rgba(0, 0, 0, 0.06); }
+.dir-badge.to { background: rgba(47, 133, 90, 0.14); color: var(--accent, #2f855a); }
+.dir-arrow { opacity: 0.55; font-weight: 400; }
+.sync-stack { display: grid; gap: 16px; }
+
+/* 统计小格 */
+.stat-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.stat-row .stat {
+  flex: 1 1 110px;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.035);
+  font-size: 0.8rem;
+}
+.stat-row .stat strong { font-size: 1.25rem; font-weight: 650; }
+.stat-row .stat strong.danger { color: #c53030; }
