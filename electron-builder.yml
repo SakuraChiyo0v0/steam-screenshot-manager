@@ -47,6 +47,22 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: Steam截图管理器
+  # 自动更新拉起安装器时（带 --updated）跳过「为谁安装」那一页：那一页只认
+  # /allusers、/currentuser，electron-updater 不传，不跳会停在那儿等人点（见 resources/installer.nsh）
+  include: resources/installer.nsh
 
 portable:
   artifactName: steam-screenshot-manager-${version}-${arch}-portable.${ext}
+
+# 自动更新的来源：GitHub Releases（仓库公开，客户端不用 token）。
+# 打包时写进 resources/app-update.yml；发布由 .github/workflows/release.yml 推 v* 标签触发。
+# 本机 pnpm package 只出包、不上传（electron-builder 只在 CI 的 tag 构建里 --publish）。
+publish:
+  provider: github
+  owner: SakuraChiyo0v0
+  repo: steam-screenshot-manager
+  releaseType: release
+
+# Release 正文：发布脚本从 CHANGELOG.md 抽出当前版本那一节写到这里
+releaseInfo:
+  releaseNotesFile: release/release-notes.md

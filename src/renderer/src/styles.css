@@ -1571,3 +1571,28 @@ dialog::backdrop {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* 版本与更新：更新日志折叠区 */
+.update-notes {
+  margin-top: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.25));
+  padding: 8px 12px;
+}
+
+.update-notes summary {
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.update-notes pre {
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.9;
+}

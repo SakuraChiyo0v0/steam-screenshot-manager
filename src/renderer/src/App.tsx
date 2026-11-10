@@ -37,6 +37,7 @@ import type {
   UploadStatusDto,
   RegisteredSourceDto,
   ScanProgressDto,
+  UpdateStateDto,
   ScanStatusDto,
   Settings
 } from '@shared/types'
@@ -780,6 +781,55 @@ export function App() {
     try {
       setArchiveStatus(await call((api) => api.cancelArchive()))
       setToast('已请求取消归档，当前文件处理完后停止。')
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
+  }
+
+  const [appVersion, setAppVersion] = useState('—')
+  const [updateState, setUpdateState] = useState<UpdateStateDto | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+
+  /** 版本号取自主进程（app.getVersion()），渲染层不硬编码。 */
+  useEffect(() => {
+    const api = getApi()
+    if (!api) return
+    void call((instance) => instance.getAppInfo())
+      .then((info) => setAppVersion(info.version))
+      .catch(() => undefined)
+  }, [])
+
+  /** 更新状态由主进程推送（检查、下载进度、下载完成都会推）。 */
+  useEffect(() => {
+    const api = getApi()
+    if (!api) return
+    void call((instance) => instance.getUpdateState())
+      .then((state) => setUpdateState(state))
+      .catch(() => undefined)
+    api.onUpdateProgress((state) => setUpdateState(state))
+    return () => api.offUpdateProgress()
+  }, [])
+
+  const runUpdateAction = async (
+    action: 'checkForUpdates' | 'downloadUpdate'
+  ): Promise<void> => {
+    setUpdateBusy(true)
+    try {
+      const state = await call((api) => api[action]())
+      setUpdateState(state)
+      if (state.phase === 'up-to-date') setToast('已是最新版本。')
+      if (state.phase === 'error') setToast(state.errorMessage ?? '检查更新失败')
+    } catch (error) {
+      setToast(errorMessage(error))
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
+  const installUpdate = async (): Promise<void> => {
+    try {
+      await call((api) => api.installUpdate())
+      setToast('正在重启并安装新版本…')
     } catch (error) {
       setToast(errorMessage(error))
     }
@@ -1814,6 +1864,19 @@ export function App() {
                     <small>登录后直接开始后台收集</small>
                   </span>
                 </label>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={settings?.autoCheckUpdates !== false}
+                    onChange={(event) =>
+                      void patchSettings({ autoCheckUpdates: event.target.checked })
+                    }
+                  />
+                  <span>
+                    <strong>自动检查更新</strong>
+                    <small>启动一分钟后查一次，之后每 6 小时一次；查到就在后台下好，退出时装上</small>
+                  </span>
+                </label>
               </div>
               <p className="panel-note">
                 预览缓存：{previewState ? `${previewState.count} 张 / ${formatBytes(previewState.bytes)}` : '读取中…'}
@@ -1824,12 +1887,74 @@ export function App() {
               </p>
             </section>
 
+            <section className="settings-card">
+              <div className="section-heading">
+                <div>
+                  <h2>版本与更新</h2>
+                  <p>更新来自 GitHub Releases；下载完可以选择重启安装，或下次退出时自动装上。</p>
+                </div>
+                <ArrowClockwiseIcon size={23} />
+              </div>
+              <div className="directory-field">
+                <span>
+                  当前版本 {appVersion}
+                  {updateState?.availableVersion && updateState.phase !== 'up-to-date'
+                    ? ` · 可更新到 ${updateState.availableVersion}`
+                    : ''}
+                </span>
+                <div className="actions">
+                  {updateState?.phase === 'downloaded' ? (
+                    <button className="primary" onClick={() => void installUpdate()}>
+                      重启并安装
+                    </button>
+                  ) : null}
+                  {updateState?.phase === 'available' ? (
+                    <button
+                      className="primary"
+                      disabled={updateBusy}
+                      onClick={() => void runUpdateAction('downloadUpdate')}
+                    >
+                      下载更新
+                    </button>
+                  ) : null}
+                  <button
+                    disabled={updateBusy || updateState?.phase === 'disabled'}
+                    onClick={() => void runUpdateAction('checkForUpdates')}
+                  >
+                    {updateState?.phase === 'checking' ? '检查中…' : '检查更新'}
+                  </button>
+                </div>
+              </div>
+              {updateState?.phase === 'downloading' && updateState.progress ? (
+                <p className="panel-note">
+                  正在下载 {updateState.availableVersion}：{updateState.progress.percent}%
+                  {updateState.progress.total > 0
+                    ? `（${formatBytes(updateState.progress.transferred)} / ${formatBytes(updateState.progress.total)}）`
+                    : ''}
+                </p>
+              ) : null}
+              {updateState?.phase === 'disabled' ? (
+                <p className="panel-note">
+                  当前是开发运行或工具模式，不连接更新源；安装版会自动检查。
+                </p>
+              ) : null}
+              {updateState?.errorMessage ? (
+                <p className="panel-note">上次检查：{updateState.errorMessage}</p>
+              ) : null}
+              {updateState?.releaseNotes && updateState.phase !== 'up-to-date' ? (
+                <details className="update-notes">
+                  <summary>本版更新内容</summary>
+                  <pre>{updateState.releaseNotes}</pre>
+                </details>
+              ) : null}
+            </section>
+
             <section className="about-row">
               <div>
                 <strong>
                   拾光 <span className="muted">/ Steam 截图管理器</span>
                 </strong>
-                <p>本地索引 · 0.1.0</p>
+                <p>本地索引 · {appVersion}</p>
               </div>
               <button className="text-button" onClick={() => setDiagnostics(!diagnostics)}>
                 {diagnostics ? '收起工程诊断' : '工程诊断'}

@@ -15,13 +15,15 @@ const KEY_CLOSE_TO_TRAY = 'close_to_tray'
 const KEY_PREFER_ORIGINAL_IMAGES = 'prefer_original_images'
 const KEY_LAUNCH_AT_LOGIN = 'launch_at_login'
 const KEY_LIBRARY_ROOT = 'library_root'
+const KEY_AUTO_CHECK_UPDATES = 'auto_check_updates'
 
 const BOOLEAN_KEYS = [
   'autoCollect',
   'autoBackup',
   'closeToTray',
   'preferOriginalImages',
-  'launchAtLogin'
+  'launchAtLogin',
+  'autoCheckUpdates'
 ] as const
 const NUMBER_KEYS = ['autoCollectIntervalMinutes'] as const
 
@@ -86,6 +88,7 @@ export function readSettings(db: SqliteDatabase): Settings {
         : DEFAULT_SETTINGS.autoCollectIntervalMinutes,
     autoBackup: readBoolean(KEY_AUTO_BACKUP, DEFAULT_SETTINGS.autoBackup),
     closeToTray: readBoolean(KEY_CLOSE_TO_TRAY, DEFAULT_SETTINGS.closeToTray),
+    autoCheckUpdates: readBoolean(KEY_AUTO_CHECK_UPDATES, DEFAULT_SETTINGS.autoCheckUpdates),
     preferOriginalImages: readBoolean(
       KEY_PREFER_ORIGINAL_IMAGES,
       DEFAULT_SETTINGS.preferOriginalImages

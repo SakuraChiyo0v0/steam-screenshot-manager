@@ -1,6 +1,6 @@
 {
   "name": "steam-screenshot-manager",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "本地优先的 Steam 截图管理与 WebDAV 备份桌面应用",
   "author": "SakuraChiyo0v0",
@@ -18,9 +18,11 @@
     "test:watch": "vitest",
     "build": "electron-vite build",
     "self-check": "pnpm run build && electron . --self-check",
-    "package": "pnpm run build && electron-builder --win",
+    "package": "pnpm run build && node scripts/release-notes.mjs && electron-builder --win",
     "package:dir": "pnpm run build && electron-builder --win --dir",
-    "dev:ui": "vite --config vite.ui.config.ts"
+    "dev:ui": "vite --config vite.ui.config.ts",
+    "release:notes": "node scripts/release-notes.mjs",
+    "dist": "pnpm run build && node scripts/release-notes.mjs && electron-builder --win --publish never"
   },
   "devDependencies": {
     "@node-steam/vdf": "^2.2.0",
@@ -37,5 +39,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

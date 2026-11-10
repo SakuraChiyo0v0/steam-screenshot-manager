@@ -25,8 +25,13 @@ import { createTray, destroyTray, refreshTray } from './tray'
 import { rescheduleAutoCollect } from './auto-collect'
 import { applyLoginItem } from './login-item'
 import { reconcileNow } from './archive-job'
+import { UpdateScheduler, createUpdater, registerScheduler, registerUpdater } from './updates'
+import { updateSource } from '@shared/update'
+import { IPC_EVENTS } from '@shared/ipc'
 
 const SELF_CHECK_FLAG = '--self-check'
+/** 只做一次更新检查并打印结果（工具模式，不建窗口）：用来在真机上确认更新链路是否通 */
+const CHECK_UPDATE_FLAG = '--check-update'
 const SELF_CHECK_TIMEOUT_MS = 30_000
 
 let mainWindow: BrowserWindow | null = null
@@ -88,6 +93,8 @@ function createWindow(): BrowserWindow {
 
 /** 是否正在真正退出（用于区分"关闭窗口"与"退出应用"）。 */
 let quitting = false
+/** 自动检查更新的排期器；未接更新源（开发运行）时为 null */
+let updateScheduler: UpdateScheduler | null = null
 let trayTimer: NodeJS.Timeout | null = null
 
 function focusExistingWindow(): void {
@@ -188,6 +195,44 @@ async function probeRendererBoundary(): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * 工具模式：只查一次更新，把结果以 JSON 打到标准输出后退出。
+ *
+ * 不下载、不安装 —— 用来在真机上确认「打包后的更新源配置 + 网络 + 版本比较」这三件事是不是通的。
+ * 退出码：0 = 已是最新或发现新版本（都算链路正常）；1 = 检查失败。
+ */
+async function runUpdateCheck(): Promise<void> {
+  const source = updateSource({ packaged: app.isPackaged, toolMode: false, env: process.env })
+  const updater = createUpdater({
+    source,
+    log: {
+      info: (message, meta) => console.log('[更新]', message, meta ?? ''),
+      warn: (message, meta) => console.warn('[更新]', message, meta ?? '')
+    },
+    broadcast: () => undefined,
+    userDataDir: app.getPath('userData')
+  })
+
+  if (!updater) {
+    console.log(JSON.stringify({ mode: 'check-update', enabled: false, reason: '当前形态不接更新源' }))
+    app.exit(0)
+    return
+  }
+
+  const state = await updater.check()
+  console.log(
+    JSON.stringify({
+      mode: 'check-update',
+      currentVersion: state.currentVersion,
+      phase: state.phase,
+      availableVersion: state.availableVersion,
+      errorMessage: state.errorMessage
+    })
+  )
+  updater.dispose()
+  app.exit(state.phase === 'error' ? 1 : 0)
+}
+
 async function runSelfCheck(): Promise<void> {
   const startedAt = performance.now()
   const timeout = setTimeout(() => {
@@ -227,7 +272,8 @@ const isToolMode =
   readVerifyUploadTarget(process.argv) !== null ||
   readVerifyRestoreTarget(process.argv) !== null ||
   readBuildPreviewsTarget(process.argv) !== null ||
-  process.argv.includes(SELF_CHECK_FLAG)
+  process.argv.includes(SELF_CHECK_FLAG) ||
+  process.argv.includes(CHECK_UPDATE_FLAG)
 
 // 工具模式（自检 / 扫描验证）不参与单实例锁：它们不创建窗口，
 // 也不应因为界面实例正在运行而无法执行。
@@ -273,6 +319,11 @@ if (!hasSingleInstanceLock) {
     const buildPreviewsTarget = readBuildPreviewsTarget(process.argv)
     if (buildPreviewsTarget) {
       await runBuildPreviews(buildPreviewsTarget, process.argv.includes('--mini'))
+      return
+    }
+
+    if (process.argv.includes(CHECK_UPDATE_FLAG)) {
+      await runUpdateCheck()
       return
     }
 
@@ -330,6 +381,42 @@ if (!hasSingleInstanceLock) {
     applyLoginItem(startupSettings.launchAtLogin)
     rescheduleAutoCollect()
 
+    // 自动更新：打包后走 GitHub Releases（electron-builder 打包时写进 resources/app-update.yml）。
+    // 开发运行默认不接，设了 SSM_UPDATE_URL 可以接本机更新源演练整条链路。
+    const source = updateSource({
+      packaged: app.isPackaged,
+      toolMode: false,
+      env: process.env
+    })
+    const updater = createUpdater({
+      source,
+      log: {
+        info: (message, meta) => console.log('[更新]', message, meta ?? ''),
+        warn: (message, meta) => console.warn('[更新]', message, meta ?? '')
+      },
+      broadcast: (state) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.isDestroyed()) {
+            window.webContents.send(IPC_EVENTS.updateProgress, state)
+          }
+        }
+      },
+      userDataDir: context.paths.dataDir
+    })
+    registerUpdater(updater)
+    if (updater) {
+      updateScheduler = new UpdateScheduler({
+        updater,
+        enabled: () => readSettings(getAppContext().database.db).autoCheckUpdates,
+        log: {
+          info: (message, meta) => console.log('[更新]', message, meta ?? ''),
+          warn: (message, meta) => console.warn('[更新]', message, meta ?? '')
+        }
+      })
+      updateScheduler.start()
+      registerScheduler(updateScheduler)
+    }
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         mainWindow = createWindow()
@@ -345,6 +432,8 @@ if (!hasSingleInstanceLock) {
     clearInterval(trayTimer)
     trayTimer = null
   }
+  updateScheduler?.stop()
+  updateScheduler = null
   destroyTray()
 })
 

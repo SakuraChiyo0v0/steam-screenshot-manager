@@ -43,6 +43,8 @@ export interface Settings {
   readonly launchAtLogin: boolean
   /** 图库根目录；未选择时为 null */
   readonly libraryRoot: string | null
+  /** 后台自动检查更新（启动一分钟后一次，之后每 6 小时一次） */
+  readonly autoCheckUpdates: boolean
 }
 
 /** app:getInfo 的返回内容。 */
@@ -71,7 +73,46 @@ export const DEFAULT_SETTINGS: Settings = {
   closeToTray: true,
   preferOriginalImages: true,
   launchAtLogin: false,
-  libraryRoot: null
+  libraryRoot: null,
+  autoCheckUpdates: true
+}
+
+/* ------------------------------------------------------------------ *
+ * 应用更新（GitHub Releases）
+ * ------------------------------------------------------------------ */
+
+/** 更新状态机。'disabled' 表示当前形态不接更新源（开发运行、工具模式）。 */
+export type UpdatePhase =
+  | 'disabled'
+  | 'idle'
+  | 'checking'
+  | 'up-to-date'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+
+export interface UpdateProgressDto {
+  /** 0–100 */
+  readonly percent: number
+  readonly transferred: number
+  readonly total: number
+  readonly bytesPerSecond: number
+}
+
+export interface UpdateStateDto {
+  readonly phase: UpdatePhase
+  /** 当前运行的版本 */
+  readonly currentVersion: string
+  /** 查到的新版本；没有就是 null */
+  readonly availableVersion: string | null
+  /** 这一版更新日志的正文（来自 CHANGELOG，发布时写进 Release） */
+  readonly releaseNotes: string | null
+  readonly progress: UpdateProgressDto | null
+  /** 已翻译成中文的失败原因；原文只进日志 */
+  readonly errorMessage: string | null
+  /** 最近一次检查完成的时间（ISO） */
+  readonly checkedAt: string | null
 }
 
 /* ------------------------------------------------------------------ *

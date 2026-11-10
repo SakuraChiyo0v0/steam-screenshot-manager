@@ -18,6 +18,7 @@ import type {
   ImportLibraryProgressDto,
   ImportLibrarySummaryDto,
   LibraryCopyStateDto,
+  UpdateStateDto,
   RemoteConnectionDto,
   RemoteStateDto,
   UploadStatusDto,
@@ -105,7 +106,12 @@ export const IPC_CHANNELS = {
   steamKeyStatus: 'steam:keyStatus',
   steamSaveKey: 'steam:saveKey',
   steamCompleteNames: 'steam:completeNames',
-  libraryRenameGame: 'library:renameGame'
+  libraryRenameGame: 'library:renameGame',
+  // 应用更新（GitHub Releases）
+  updateStatus: 'update:status',
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateInstall: 'update:install'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -118,6 +124,7 @@ export const IPC_EVENTS = {
   uploadProgress: 'upload:progress',
   restoreProgress: 'restore:progress',
   importProgress: 'library:importProgress',
+  updateProgress: 'update:progress',
   previewReady: 'preview:ready'
 } as const
 
@@ -167,7 +174,11 @@ export const EXPOSED_METHODS = [
   'getSteamKeyStatus',
   'saveSteamApiKey',
   'completeGameNames',
-  'renameGame'
+  'renameGame',
+  'getUpdateState',
+  'checkForUpdates',
+  'downloadUpdate',
+  'installUpdate'
 ] as const
 
 export type ExposedMethod = (typeof EXPOSED_METHODS)[number]
@@ -186,6 +197,8 @@ export const EVENT_METHODS = [
   'offRestoreProgress',
   'onImportProgress',
   'offImportProgress',
+  'onUpdateProgress',
+  'offUpdateProgress',
   'onPreviewReady',
   'offPreviewReady'
 ] as const
@@ -240,7 +253,11 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   getSteamKeyStatus: IPC_CHANNELS.steamKeyStatus,
   saveSteamApiKey: IPC_CHANNELS.steamSaveKey,
   completeGameNames: IPC_CHANNELS.steamCompleteNames,
-  renameGame: IPC_CHANNELS.libraryRenameGame
+  renameGame: IPC_CHANNELS.libraryRenameGame,
+  getUpdateState: IPC_CHANNELS.updateStatus,
+  checkForUpdates: IPC_CHANNELS.updateCheck,
+  downloadUpdate: IPC_CHANNELS.updateDownload,
+  installUpdate: IPC_CHANNELS.updateInstall
 }
 
 export type IpcResult<T> = Ok<T> | Err
@@ -402,6 +419,13 @@ export interface RendererApi {
   onRestoreProgress(listener: (status: RestoreStatusDto) => void): void
   offRestoreProgress(): void
   /** 某张图的预览已生成，界面可以换成更清晰也更轻的预览 */
+  /** 应用更新：当前状态、手动检查、下载、重启安装 */
+  getUpdateState(): Promise<IpcResult<UpdateStateDto>>
+  checkForUpdates(): Promise<IpcResult<UpdateStateDto>>
+  downloadUpdate(): Promise<IpcResult<UpdateStateDto>>
+  installUpdate(): Promise<IpcResult<null>>
+  onUpdateProgress(listener: (state: UpdateStateDto) => void): void
+  offUpdateProgress(): void
   onImportProgress(listener: (progress: ImportLibraryProgressDto) => void): void
   offImportProgress(): void
   onPreviewReady(listener: (payload: PreviewReadyPayload) => void): void

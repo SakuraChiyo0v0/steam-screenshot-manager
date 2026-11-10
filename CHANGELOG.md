@@ -5,6 +5,31 @@
 版本号遵循语义化版本：向后兼容的功能新增进次版本号，缺陷修复进修订号。
 **从 0.2.0 起，每次发布都同步更新本文件与 `package.json` 的 `version`，并在提交信息里带上版本号。**
 
+## [0.8.0] - 2026-11-10
+
+### 新增
+
+- **应用内自动更新**：设置页新增「版本与更新」。启动一分钟后自动检查一次，之后每 6 小时一次；查到新版本就在后台下好（显示进度），可以「重启并安装」，也可以等下次正常退出时静默装上。更新来自 GitHub Releases，安装包带 .blockmap，差分下载。
+- **更新日志看得见**：更新内容取自 `CHANGELOG.md` 当版那一节，发布时写进 Release 正文和 `latest.yml`，应用里在「本版更新内容」里展开看，不用跑去 GitHub。
+- **「自动检查更新」开关**：关掉后不再定时检查，手动检查到了只提示、不自动下载。
+- **`--check-update` 工具模式**：不建窗口，只查一次并把结果打成 JSON（`phase`/`availableVersion`/`errorMessage`），用来在真机上确认打包后的更新链路是否通；退出码 0 表示链路正常（最新或发现新版本），1 表示检查失败。
+
+### 修复
+
+- **安装器在自动更新时会停在「为谁安装」那一页**：那一页只认 `/allusers`、`/currentuser`，electron-updater 不传，于是自动更新会卡在等人点。新增 `build/installer.nsh`，更新时沿用注册表里已定的安装方式，跳过这一页；全新安装仍可正常选。
+
+### 发布链
+
+- 新增 `.github/workflows/release.yml`：推 `v*` 标签 → 装依赖并补齐 electron 二进制 → 校验标签与版本一致、CHANGELOG 有这一节 → 类型检查 + 全部测试 → 建 Release → 打包并上传 setup/portable/blockmap/latest.yml。
+- 新增 `scripts/release-notes.mjs`：从 CHANGELOG 抽出当前版本那一节写进 `release/release-notes.md`，作为 Release 正文与 `latest.yml` 的 `releaseNotes`；`--tag v0.8.0` 会顺带核对标签与 `package.json` 版本一致。
+- `electron-builder.yml` 增加 `publish`（GitHub Releases，仓库公开、客户端不需要 token）与 `releaseInfo`，打包时写入 `resources/app-update.yml`。
+
+### 验证
+
+- 新增 `tests/shared/changelog.test.ts`（5 项：切节、分组、折行续接、取不到版本返回 null、版本比较）与 `tests/shared/update.test.ts`（6 项：把 electron-updater 的英文错误翻成中文、还没发过版本算「无可用版本」、更新源在新源/开发/工具模式下分别怎么选）。全套 233 项通过，两个 tsconfig 的 `tsc --noEmit` 与 `electron-vite build` 通过。
+- 打包产物核对：`resources/app-update.yml` 指向 `SakuraChiyo0v0/steam-screenshot-manager`；`app.asar` 内已含 `electron-updater` 及其全部运行时依赖（254 个文件）；`latest.yml` 带本版更新内容与 sha512。
+- 真机链路：用 `--check-update` 在本机验证了「读 GitHub 上的 latest.yml → 比版本 → 给出 available/up-to-date」，见发布记录。
+
 ## [0.7.0] - 2026-11-10
 
 ### 新增

@@ -1,0 +1,71 @@
+# 发布：推 v* 标签 → 在 Windows 上打安装包 → 发到 GitHub Release。
+#
+#   1. 改 package.json 的 version，在 CHANGELOG.md 顶上写这个版本的一节
+#   2. 提交、push 到 main
+#   3. git tag v<版本> && git push origin v<版本>
+#
+# 产物：steam-screenshot-manager-<版本>-x64-setup.exe（安装版）、-portable.exe（便携版）、
+# .blockmap、latest.yml。已装的客户端靠 latest.yml 发现新版本（自动更新），靠 .blockmap 做差量下载。
+# Release 正文是 CHANGELOG 里这个版本那一节。
+#
+# 标签与 package.json 版本对不上、CHANGELOG 没写这一节：直接失败，不发。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # 创建 Release、上传产物
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # pnpm 装完 electron 的二进制不一定在（package.json 里没有 postinstall，
+      # pnpm 默认也不执行依赖的构建脚本）。electron-builder.yml 用的是本地 electronDist，
+      # 所以这里显式跑一次 electron 的 install.js 把 dist/ 补上。
+      - name: Install
+        run: |
+          pnpm install --frozen-lockfile
+          node node_modules/electron/install.js
+          if (!(Test-Path node_modules/electron/dist/electron.exe)) { throw "electron 二进制没装上" }
+
+      - name: Check tag & release notes
+        run: node scripts/release-notes.mjs --tag "${{ github.ref_name }}"
+
+      # 与本机 pnpm typecheck / test 相同；冒烟要真开窗口，CI 上不跑
+      - name: Typecheck & test
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      # 先建好 Release 再让 electron-builder 往里传。不先建的话，它并发上传 .exe 与 .blockmap 时
+      # 两边都发现「Release 不存在」各建一个（kura 仓库 v0.5.0 实测出过两个同名 Release）
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release create $tag --title $tag.TrimStart('v') --notes-file release/release-notes.md --verify-tag
+
+      - name: Build & publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pnpm build
+          npx electron-builder --win --publish always

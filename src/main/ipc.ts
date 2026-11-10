@@ -22,6 +22,7 @@ import type {
   ImportLibraryPayload,
   ImportLibrarySummaryDto,
   LibraryCopyStateDto,
+  UpdateStateDto,
   PreviewStatsDto,
   SteamKeyStatusDto,
   CompleteNamesResultDto,
@@ -68,6 +69,7 @@ import type { SqliteDatabase } from '@core/db/sqlite'
 import { getAppContext } from './app-context'
 import { applyLoginItem } from './login-item'
 import { rescheduleAutoCollect } from './auto-collect'
+import { applyAutoCheckSetting, disabledUpdateState, getUpdater } from './updates'
 import { previewStats, resolvePreviewCacheRoot } from '@core/library/previews'
 import {
   deleteEncrypted,
@@ -271,6 +273,9 @@ export function registerIpcHandlers(): void {
     if (payload.autoCollect !== undefined || payload.autoCollectIntervalMinutes !== undefined) {
       rescheduleAutoCollect()
     }
+    if (payload.autoCheckUpdates !== undefined) {
+      applyAutoCheckSetting(next.autoCheckUpdates)
+    }
     return next
   })
 
@@ -344,6 +349,35 @@ export function registerIpcHandlers(): void {
     }
     setGameAlias(database.db, input.gameKey, input.name, new Date().toISOString())
     return listGames(database.db, {}).map(toGalleryGame)
+  })
+
+  /* ---------------- 应用更新 ---------------- */
+
+  /** 更新源没接上（开发运行 / 工具模式）时返回 phase='disabled'，界面据此说明"当前形态不检查更新"。 */
+  const currentUpdateState = (): UpdateStateDto => {
+    const updater = getUpdater()
+    return updater ? updater.getState() : disabledUpdateState()
+  }
+
+  handle(IPC_CHANNELS.updateStatus, currentUpdateState)
+
+  handle(IPC_CHANNELS.updateCheck, async (): Promise<UpdateStateDto> => {
+    const updater = getUpdater()
+    if (!updater) throw new AppError('APP_INTERNAL', '当前运行方式不检查更新（请使用安装版）')
+    return updater.check()
+  })
+
+  handle(IPC_CHANNELS.updateDownload, async (): Promise<UpdateStateDto> => {
+    const updater = getUpdater()
+    if (!updater) throw new AppError('APP_INTERNAL', '当前运行方式不下载更新（请使用安装版）')
+    return updater.download()
+  })
+
+  handle(IPC_CHANNELS.updateInstall, (): null => {
+    const updater = getUpdater()
+    if (!updater) throw new AppError('APP_INTERNAL', '当前运行方式不安装更新（请使用安装版）')
+    updater.install()
+    return null
   })
 
   handle(IPC_CHANNELS.libraryPickRoot, async (): Promise<LibraryRootState> => {
