@@ -38,6 +38,8 @@ export const ERROR_CODES = {
   DAV_NOT_WEBDAV: 'DAV_NOT_WEBDAV',
   /** 跨站重定向被拒绝 */
   DAV_REDIRECT_REJECTED: 'DAV_REDIRECT_REJECTED',
+  /** 远端地址能连通，但路径不可用（前缀不对、目录不存在或不在放行范围内） */
+  DAV_PATH_INVALID: 'DAV_PATH_INVALID',
   /** 主进程未预期的内部错误 */
   APP_INTERNAL: 'APP_INTERNAL'
 } as const
@@ -68,6 +70,7 @@ export const ERROR_META: Readonly<Record<ErrorCode, ErrorCodeMeta>> = {
   DAV_CAPACITY: { message: '远端容量不足', retriable: true },
   DAV_NOT_WEBDAV: { message: '该地址不是可用的 WebDAV 服务', retriable: false },
   DAV_REDIRECT_REJECTED: { message: '跨站重定向已被拒绝', retriable: false },
+  DAV_PATH_INVALID: { message: '远端路径不可用', retriable: false },
   APP_INTERNAL: { message: '应用内部错误', retriable: false }
 }
 

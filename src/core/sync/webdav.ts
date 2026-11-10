@@ -14,6 +14,7 @@ import { createReadStream, createWriteStream, statSync } from 'node:fs'
 import { request as httpRequest, type IncomingMessage } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { AppError } from '@shared/errors'
+import type { RemoteClient } from './remote-client'
 
 /**
  * 把用户填写的 WebDAV 地址拆成「源」与「根路径」。
@@ -356,6 +357,30 @@ export class DavClient {
     return new AppError('DAV_TIMEOUT', `网络错误：${detail}`)
   }
 
+  /** 这次请求实际会打到的完整 URL（排错时唯一能说清问题的东西）。 */
+  absoluteUrl(relativePath: string, fromBase = false): string {
+    const url = new URL(this.base.toString())
+    url.pathname = `${url.pathname.replace(/\/$/, '')}${joinRemotePath(fromBase ? '' : this.config.rootPath, relativePath)}`
+    return url.toString()
+  }
+
+  /** 远端集合是否存在（PROPFIND Depth:0）。 */
+  async collectionExists(relativePath: string): Promise<boolean> {
+    try {
+      const response = await this.raw({
+        method: 'PROPFIND',
+        relativePath,
+        headers: { depth: '0', 'content-type': 'application/xml' },
+        bodyText: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>',
+        expectDav: true
+      })
+      return response.status === 207 || response.status === 200
+    } catch {
+      // 认证/网络问题交给调用方按错误处理，这里只回答"能不能列"
+      return false
+    }
+  }
+
   /** MKCOL：已存在（405/301）视为成功。 */
   async createCollection(relativePath: string): Promise<void> {
     // 已存在时不同服务端返回 405 或 301，都按"已存在"处理
@@ -369,7 +394,15 @@ export class DavClient {
       return
     }
     if (response.status !== 201 && response.status !== 200) {
-      throw new AppError('APP_INTERNAL', `创建目录返回 ${response.status}`)
+      // 404 最常见的原因不是"服务不存在"，而是路径前缀不对、或该路径不在远端的放行范围内
+      const url = this.absoluteUrl(relativePath)
+      if (response.status === 404) {
+        throw new AppError(
+          'DAV_PATH_INVALID',
+          `创建目录返回 404：${url}。地址本身能连上，但这个路径不认写；检查 WebDAV 入口前缀（如 /webdav、/dav）与远端允许写入的范围`
+        )
+      }
+      throw new AppError('APP_INTERNAL', `创建目录返回 ${response.status}：${url}`)
     }
   }
 
@@ -399,7 +432,10 @@ export class DavClient {
         tolerateStatuses: [405, 301]
       })
       if (response.status !== 201 && response.status !== 200 && response.status !== 405 && response.status !== 301) {
-        throw new AppError('LIB_PATH_INVALID', `创建远端目录返回 ${response.status}`)
+        throw new AppError(
+          'DAV_PATH_INVALID',
+          `创建远端目录返回 ${response.status}：${this.absoluteUrl(current, true)}`
+        )
       }
     }
   }
@@ -506,6 +542,24 @@ export class DavClient {
     const response = await this.raw({ method: 'DELETE', relativePath, expectDav: true })
     return response.status !== 404
   }
+
+  /** 删除本次探测自己建的目录（探测残留不该留在用户远端）。 */
+  async deleteCollection(relativePath: string): Promise<boolean> {
+    const response = await this.raw({ method: 'DELETE', relativePath, expectDav: true })
+    return response.status !== 404
+  }
+
+  /** 探一下根路径本身（PROPFIND Depth:0），用来判断"这个 URL 是不是 WebDAV 入口"。 */
+  async probeRoot(): Promise<{ status: number }> {
+    const response = await this.raw({
+      method: 'PROPFIND',
+      relativePath: '',
+      headers: { depth: '0', 'content-type': 'application/xml' },
+      bodyText: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>',
+      expectDav: true
+    })
+    return { status: response.status }
+  }
 }
 
 export interface CapabilityItem {
@@ -519,7 +573,7 @@ export interface CapabilityItem {
  * 不测试 MOVE/LOCK，因为它们不是首版必需能力。
  */
 export async function probeCapabilities(
-  client: DavClient,
+  client: RemoteClient,
   baseRelativePath: string
 ): Promise<CapabilityItem[]> {
   const items: CapabilityItem[] = []
@@ -579,5 +633,89 @@ export async function probeCapabilities(
     return '上传管线只使用唯一路径，不依赖 MOVE/LOCK'
   })
 
+  // 探测目录本身也清掉：探测不该在用户的远端留下垃圾
+  try {
+    await client.deleteCollection(probeDir)
+  } catch {
+    // 清理失败不影响探测结论
+  }
+
   return items
+}
+
+/** 常见 WebDAV 入口前缀。只填了主机名（或只填了网关域名）时按这些试一遍。 */
+export const COMMON_DAV_PREFIXES = [
+  'webdav',
+  'dav',
+  'remote.php/webdav',
+  'remote.php/dav/files',
+  'dav/files',
+  'files',
+  'share'
+] as const
+
+export interface DavBaseProbe {
+  readonly url: string
+  /** HTTP 状态；网络层失败为 0 */
+  readonly status: number
+  readonly ok: boolean
+  readonly detail: string
+}
+
+/**
+ * 探测用户给的地址是不是一个可用的 WebDAV 入口。
+ *
+ * 用户的地址常常只到域名/网关（如 `http://nas:8898`），而 WebDAV 其实挂在某个前缀下
+ * （如 `/webdav`）。给定时没有路径就顺带把常见前缀都试一遍：这样报错能直接说清
+ * "你给的这个路径 404，但 http://nas:8898/webdav 可用"，而不是抛一个光秃秃的 404。
+ */
+export async function probeDavBases(
+  rawUrl: string,
+  credential: DavCredential,
+  timeoutMs?: number
+): Promise<DavBaseProbe[]> {
+  const given = splitDavUrl(rawUrl)
+  const candidates: { url: string; baseUrl: string; rootPath: string }[] = [
+    { url: rawUrl, baseUrl: given.baseUrl, rootPath: given.rootPath }
+  ]
+  if (given.rootPath.length === 0) {
+    for (const prefix of COMMON_DAV_PREFIXES) {
+      candidates.push({
+        url: `${given.baseUrl}/${prefix}`,
+        baseUrl: given.baseUrl,
+        rootPath: prefix
+      })
+    }
+  }
+
+  const results: DavBaseProbe[] = []
+  for (const candidate of candidates) {
+    const client = new DavClient({
+      baseUrl: candidate.baseUrl,
+      rootPath: candidate.rootPath,
+      credential,
+      timeoutMs: timeoutMs ?? 8_000
+    })
+    try {
+      const response = await client.probeRoot()
+      results.push({
+        url: candidate.url,
+        status: response.status,
+        ok: response.status === 207 || response.status === 200,
+        detail:
+          response.status === 207 || response.status === 200
+            ? '可用的 WebDAV 入口'
+            : `返回 ${response.status}`
+      })
+    } catch (error) {
+      const appError = error instanceof AppError ? error : null
+      results.push({
+        url: candidate.url,
+        status: 0,
+        ok: false,
+        detail: appError ? `${appError.code}：${appError.message}` : String(error)
+      })
+    }
+  }
+  return results
 }

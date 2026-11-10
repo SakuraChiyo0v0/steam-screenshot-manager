@@ -60,6 +60,8 @@ bridgeEvent('onUploadProgress', IPC_EVENTS.uploadProgress)
 unbridgeEvent('offUploadProgress', IPC_EVENTS.uploadProgress)
 bridgeEvent('onRestoreProgress', IPC_EVENTS.restoreProgress)
 unbridgeEvent('offRestoreProgress', IPC_EVENTS.restoreProgress)
+bridgeEvent('onImportProgress', IPC_EVENTS.importProgress)
+unbridgeEvent('offImportProgress', IPC_EVENTS.importProgress)
 bridgeEvent('onPreviewReady', IPC_EVENTS.previewReady)
 unbridgeEvent('offPreviewReady', IPC_EVENTS.previewReady)
 

@@ -152,7 +152,13 @@ export function App() {
   const [toast, setToast] = useState('')
   const [remoteState, setRemoteState] = useState<RemoteStateDto | null>(null)
   const [uploadStatus, setUploadStatus] = useState<UploadStatusDto | null>(null)
-  const [connectForm, setConnectForm] = useState({ baseUrl: '', username: '', password: '' })
+  const [connectForm, setConnectForm] = useState<{
+    kind: 'webdav' | 'folder'
+    baseUrl: string
+    folderPath: string
+    username: string
+    password: string
+  }>({ kind: 'webdav', baseUrl: '', folderPath: '', username: '', password: '' })
   const [connecting, setConnecting] = useState(false)
   const [capabilities, setCapabilities] = useState<CapabilityItemDto[] | null>(null)
   const [diagnostics, setDiagnostics] = useState(false)
@@ -678,22 +684,39 @@ export function App() {
     }
   }
 
+  const pickRemoteFolder = async () => {
+    try {
+      const picked = await call((api) => api.pickRemoteFolder())
+      if (picked) {
+        setConnectForm((current) => ({ ...current, folderPath: picked }))
+      }
+    } catch (error) {
+      setToast(errorMessage(error))
+    }
+  }
+
   const connectRemoteAction = async () => {
     setConnecting(true)
     try {
       const result = await call((api) =>
-        api.connectRemote({
-          baseUrl: connectForm.baseUrl,
-          username: connectForm.username,
-          password: connectForm.password
-        })
+        api.connectRemote(
+          connectForm.kind === 'folder'
+            ? { kind: 'folder', folderPath: connectForm.folderPath }
+            : {
+                kind: 'webdav',
+                baseUrl: connectForm.baseUrl,
+                username: connectForm.username,
+                password: connectForm.password
+              }
+        )
       )
       setCapabilities([...result.capabilities])
       setConnectForm((current) => ({ ...current, password: '' }))
+      const target = result.kind === 'folder' ? '目录' : 'WebDAV'
       setToast(
         result.capabilities.every((item) => item.ok)
-          ? `已连接远端，使用图库 ${result.libraryId}。`
-          : `已连接，但有 ${result.capabilities.filter((item) => !item.ok).length} 项能力测试未通过。`
+          ? `已连接${target} ${result.baseUrl}，使用图库 ${result.libraryId}。`
+          : `已连接${target}，但有 ${result.capabilities.filter((item) => !item.ok).length} 项能力测试未通过。`
       )
       await refreshRemoteState()
     } catch (error) {
@@ -759,6 +782,44 @@ export function App() {
       setToast('已请求取消归档，当前文件处理完后停止。')
     } catch (error) {
       setToast(errorMessage(error))
+    }
+  }
+
+  const [importBusy, setImportBusy] = useState(false)
+  const [importNote, setImportNote] = useState<string | null>(null)
+
+  /** 重建索引的进度由主进程推送（几千个说明文件要读一会儿）。 */
+  useEffect(() => {
+    const api = getApi()
+    if (!api) return
+    api.onImportProgress((progress) => {
+      setImportNote(
+        `重建索引：${progress.processed} / ${progress.total}${progress.currentFile ? ` · ${progress.currentFile}` : ''}`
+      )
+    })
+    return () => api.offImportProgress()
+  }, [])
+
+  const runImportLibrary = async () => {
+    setImportBusy(true)
+    setImportNote('正在读取图库里的说明文件…')
+    try {
+      const summary = await call((api) => api.importLibraryIndex({}))
+      setImportNote(
+        `已重建索引：读 ${summary.scanned} 份说明文件，新增 ${summary.imported} 张，索引里已有 ${summary.skipped} 张，失败 ${summary.failed} 张；当前 ${summary.games} 款游戏 · ${summary.accounts} 个账号，耗时 ${(summary.durationMs / 1000).toFixed(1)} 秒。`
+      )
+      if (summary.failures.length > 0) {
+        setToast(`部分文件没能导入，第一条：${summary.failures[0]}`)
+      }
+      await refreshLibrary()
+      await refreshMeta()
+      await refreshCopyState()
+      await refreshPreviewState()
+    } catch (error) {
+      setImportNote(null)
+      setToast(errorMessage(error))
+    } finally {
+      setImportBusy(false)
     }
   }
 
@@ -1469,13 +1530,30 @@ export function App() {
               <div className="section-heading">
                 <div>
                   <h2>远端存储</h2>
-                  <p>支持连接 WebDAV。可以是 NAS，也可以是你选择的网盘。</p>
+                  <p>远端可以是 WebDAV 服务，也可以就是一个文件夹（NAS 共享、已映射的网络盘）。</p>
                 </div>
                 <span className="demo-pill">{remoteConnected ? '已连接' : '未连接'}</span>
               </div>
-              {!remoteState?.credentialStorageAvailable ? (
+              <div className="tabs">
+                <button
+                  type="button"
+                  className={connectForm.kind === 'webdav' ? 'active' : ''}
+                  onClick={() => setConnectForm({ ...connectForm, kind: 'webdav' })}
+                >
+                  WebDAV 服务
+                </button>
+                <button
+                  type="button"
+                  className={connectForm.kind === 'folder' ? 'active' : ''}
+                  onClick={() => setConnectForm({ ...connectForm, kind: 'folder' })}
+                >
+                  本机 / NAS 文件夹
+                </button>
+              </div>
+              {connectForm.kind === 'webdav' && !remoteState?.credentialStorageAvailable ? (
                 <p className="panel-note">
-                  当前系统无法安全加密保存密码，因此不提供连接；不会以明文保存凭据。
+                  当前系统无法安全加密保存密码，因此不提供 WebDAV 连接；不会以明文保存凭据。
+                  文件夹远端不需要密码，可以直接用。
                 </p>
               ) : (
                 <form
@@ -1484,6 +1562,15 @@ export function App() {
                     void connectRemoteAction()
                   }}
                 >
+                  {connectForm.kind === 'folder' ? (
+                    <div className="directory-field">
+                      <FolderOpenIcon size={20} />
+                      <span>{connectForm.folderPath || '尚未选择远端目录'}</span>
+                      <button type="button" onClick={() => void pickRemoteFolder()}>
+                        选择目录
+                      </button>
+                    </div>
+                  ) : (
                   <div className="form-grid">
                     <label className="full-width">
                       WebDAV 地址
@@ -1520,13 +1607,30 @@ export function App() {
                       />
                     </label>
                   </div>
+                  )}
                   <div className="form-footer">
-                    <span>密码只保存在本机系统加密存储，不写入数据库，也不进日志。</span>
+                    <span>
+                      {connectForm.kind === 'folder'
+                        ? '备份直接写进这个目录，不经过网络协议；NAS 共享或已映射的网络盘都行。'
+                        : '密码只保存在本机系统加密存储，不写入数据库，也不进日志。'}
+                    </span>
                     <button type="submit" disabled={connecting}>
                       {connecting ? '连接中…' : '测试并连接'}
                       <ArrowRightIcon size={17} />
                     </button>
                   </div>
+                  {connectForm.kind === 'webdav' ? (
+                    <p className="panel-note">
+                      地址要填到 WebDAV 的实际入口：很多 NAS 把它挂在某个前缀下（例如
+                      http://192.168.1.10:5005/webdav/备份/Steam截图）。只填到主机名时，应用会自动试
+                      /webdav、/dav 这类常见前缀。
+                    </p>
+                  ) : (
+                    <p className="panel-note">
+                      目录里会自己建 steam-gallery-v1/&lt;图库 ID&gt;/，放原图与记录；不写别的东西，
+                      也不改目录里已有的文件。想直接复用 NAS 上现成的图库，用设置里的「从图库目录重建索引」。
+                    </p>
+                  )}
                 </form>
               )}
               {capabilities ? (
@@ -1542,10 +1646,13 @@ export function App() {
               ) : null}
               {remoteConnected ? (
                 <div className="form-footer">
-                  <span>图库 {remoteState?.libraryId}</span>
+                  <span>
+                    {remoteState?.kind === 'folder' ? '目录' : 'WebDAV'} {remoteState?.baseUrl} · 图库{' '}
+                    {remoteState?.libraryId}
+                  </span>
                   <div className="actions">
                     <button onClick={() => void disconnectRemoteAction()}>
-                      断开并删除本机凭据
+                      {remoteState?.kind === 'folder' ? '断开连接' : '断开并删除本机凭据'}
                     </button>
                   </div>
                 </div>
@@ -1604,6 +1711,21 @@ export function App() {
                   </div>
                 </div>
               )}
+              <div className="form-footer">
+                <span>
+                  换机器、或图库就放在 NAS 上时：索引是空的，但 originals/ 旁边的 metadata/ 已经带着
+                  全部信息，可以直接按它重建。
+                </span>
+                <div className="actions">
+                  <button
+                    disabled={!settings?.libraryRoot || importBusy}
+                    onClick={() => void runImportLibrary()}
+                  >
+                    {importBusy ? '重建中…' : '从图库目录重建索引'}
+                  </button>
+                </div>
+              </div>
+              {importNote ? <p className="panel-note">{importNote}</p> : null}
             </section>
 
             <section className="settings-card">

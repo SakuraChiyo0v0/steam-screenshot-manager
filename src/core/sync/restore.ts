@@ -26,7 +26,7 @@ import {
   writeLocalMetadata
 } from '../library/archive'
 import { libraryRootPath, validateRecord } from '../sync/library-remote'
-import { DavClient } from '../sync/webdav'
+import type { RemoteClient } from '../sync/remote-client'
 
 export interface RemoteRecordEntry {
   readonly recordId: string
@@ -69,7 +69,7 @@ function extOf(objectKey: string): string {
  * 按 `records/<device>/<月>/` 逐层 PROPFIND，避免依赖服务端是否支持 Depth:infinity。
  */
 export async function listRemoteRecords(
-  client: DavClient,
+  client: RemoteClient,
   libraryId: string,
   options?: {
     readonly onProgress?: (scanned: number, valid: number) => void
@@ -255,7 +255,7 @@ export interface RestoreOptions {
   /** 远端标识：恢复成功后登记"该资产在此远端已存在"，避免换机后重复上传 */
   readonly remoteId?: string
   readonly libraryId: string
-  readonly client: DavClient
+  readonly client: RemoteClient
   readonly records: readonly RemoteRecordEntry[]
   readonly gameKeys?: readonly string[]
   readonly onProgress?: (progress: RestoreProgress) => void

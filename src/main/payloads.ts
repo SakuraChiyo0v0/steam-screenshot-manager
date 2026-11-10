@@ -5,6 +5,7 @@
  * 由 IPC 层统一转成稳定错误码返回。
  */
 
+import { isAbsolute } from 'node:path'
 import { AppError } from '@shared/errors'
 import type {
   AssetIdPayload,
@@ -12,7 +13,7 @@ import type {
   ListGamesPayload,
   RemoveSourcePayload
 } from '@shared/ipc'
-import type { AssetSortType, ExportLayoutType } from '@shared/types'
+import type { AssetSortType, ExportLayoutType, RemoteKind } from '@shared/types'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const ACCOUNT_ID_PATTERN = /^\d{1,20}$/
@@ -221,22 +222,26 @@ export function parseExportStart(value: unknown): {
 }
 
 export function parseConnectRemote(value: unknown): {
-  baseUrl: string
+  kind: RemoteKind
+  /** WebDAV 是地址，文件夹远端是绝对路径 */
+  address: string
   username: string
   password: string
   libraryId?: string | null
 } {
   const payload = asObject(value, '远端连接参数')
 
-  const baseUrl = payload['baseUrl']
-  if (typeof baseUrl !== 'string' || !/^https?:\/\//i.test(baseUrl.trim())) {
-    throw new AppError('IPC_INVALID_INPUT', '远端地址必须以 http 或 https 开头')
+  const rawKind = payload['kind'] ?? 'webdav'
+  if (rawKind !== 'webdav' && rawKind !== 'folder') {
+    throw new AppError('IPC_INVALID_INPUT', '远端类型不受支持')
   }
-  const username = payload['username']
+  const kind = rawKind as RemoteKind
+
+  const username = payload['username'] ?? ''
   if (typeof username !== 'string' || username.length > 200) {
     throw new AppError('IPC_INVALID_INPUT', '用户名不合法')
   }
-  const password = payload['password']
+  const password = payload['password'] ?? ''
   if (typeof password !== 'string' || password.length > 500) {
     throw new AppError('IPC_INVALID_INPUT', '密码不合法')
   }
@@ -245,8 +250,27 @@ export function parseConnectRemote(value: unknown): {
     throw new AppError('IPC_INVALID_INPUT', 'libraryId 不合法')
   }
 
+  let address: string
+  if (kind === 'folder') {
+    const folderPath = payload['folderPath']
+    if (typeof folderPath !== 'string' || folderPath.trim().length === 0) {
+      throw new AppError('IPC_INVALID_INPUT', '还没选择远端目录')
+    }
+    address = folderPath.trim().replace(/[\\/]+$/, '')
+    if (!isAbsolute(address)) {
+      throw new AppError('IPC_INVALID_INPUT', '远端目录必须是绝对路径')
+    }
+  } else {
+    const baseUrl = payload['baseUrl']
+    if (typeof baseUrl !== 'string' || !/^https?:\/\//i.test(baseUrl.trim())) {
+      throw new AppError('IPC_INVALID_INPUT', '远端地址必须以 http 或 https 开头')
+    }
+    address = baseUrl.trim().replace(/\/+$/, '')
+  }
+
   return {
-    baseUrl: baseUrl.trim().replace(/\/+$/, ''),
+    kind,
+    address,
     username,
     password,
     ...(typeof libraryId === 'string' && libraryId.length > 0 ? { libraryId } : {})

@@ -285,16 +285,22 @@ export interface CapabilityItemDto {
   readonly detail: string
 }
 
+/** 远端种类：WebDAV 服务，或一个普通文件夹（本机盘 / NAS 共享 / 已映射的网络盘）。 */
+export type RemoteKind = 'webdav' | 'folder'
+
 export interface RemoteConnectionDto {
   readonly remoteId: string
   readonly libraryId: string
+  /** WebDAV 是 URL；文件夹远端是绝对路径 */
   readonly baseUrl: string
+  readonly kind: RemoteKind
   readonly lastCheckStatus: string
   readonly capabilities: readonly CapabilityItemDto[]
 }
 
 export interface RemoteStateDto {
   readonly connected: boolean
+  readonly kind: RemoteKind | null
   readonly baseUrl: string | null
   readonly libraryId: string | null
   readonly lastCheckAt: string | null
@@ -415,4 +421,33 @@ export interface PreviewStatsDto {
   readonly bytes: number
   readonly pending: number
   readonly generated: number
+}
+
+/** 从图库目录重建索引的结果。 */
+export interface ImportLibrarySummaryDto {
+  readonly libraryRoot: string
+  /** 扫到的说明文件数 */
+  readonly scanned: number
+  /** 新写入索引的资产数 */
+  readonly imported: number
+  /** 索引里已有、只补副本记录的资产数 */
+  readonly skipped: number
+  readonly failed: number
+  readonly games: number
+  readonly accounts: number
+  readonly durationMs: number
+  readonly failures: readonly string[]
+}
+
+export interface ImportLibraryProgressDto {
+  readonly processed: number
+  readonly total: number
+  readonly currentFile: string | null
+  readonly imported: number
+  readonly failed: number
+}
+
+export interface ImportLibraryPayload {
+  /** 不传就用设置里的图库目录 */
+  readonly rootPath?: string
 }

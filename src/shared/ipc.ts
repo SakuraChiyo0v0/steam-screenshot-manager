@@ -14,6 +14,9 @@ import type {
   ExportLayoutType,
   ExportStatusDto,
   ExportSummaryDto,
+  ImportLibraryPayload,
+  ImportLibraryProgressDto,
+  ImportLibrarySummaryDto,
   LibraryCopyStateDto,
   RemoteConnectionDto,
   RemoteStateDto,
@@ -35,6 +38,7 @@ import type {
   GalleryPageDto,
   LibraryRootState,
   LibraryStatsDto,
+  RemoteKind,
   RegisteredSourceDto,
   ScanProgressDto,
   ScanStatusDto,
@@ -77,12 +81,16 @@ export const IPC_CHANNELS = {
   archiveStatus: 'archive:status',
   archiveReconcile: 'archive:reconcile',
   libraryCopyState: 'library:copyState',
+  /** 从图库目录（originals/ + metadata/）重建索引 */
+  libraryImportIndex: 'library:importIndex',
   exportPickDir: 'export:pickDir',
   exportStart: 'export:start',
   exportCancel: 'export:cancel',
   exportStatus: 'export:status',
   // 远端备份（WebDAV）
   syncConnect: 'sync:connect',
+  /** 选择"文件夹远端"的目录 */
+  syncPickFolder: 'sync:pickFolder',
   syncDisconnect: 'sync:disconnect',
   syncState: 'sync:state',
   uploadStart: 'upload:start',
@@ -109,6 +117,7 @@ export const IPC_EVENTS = {
   exportProgress: 'export:progress',
   uploadProgress: 'upload:progress',
   restoreProgress: 'restore:progress',
+  importProgress: 'library:importProgress',
   previewReady: 'preview:ready'
 } as const
 
@@ -138,12 +147,14 @@ export const EXPOSED_METHODS = [
   'cancelArchive',
   'getArchiveStatus',
   'reconcileLibrary',
+  'importLibraryIndex',
   'getLibraryCopyState',
   'pickExportDir',
   'startExport',
   'cancelExport',
   'getExportStatus',
   'connectRemote',
+  'pickRemoteFolder',
   'disconnectRemote',
   'getRemoteState',
   'startUpload',
@@ -173,6 +184,8 @@ export const EVENT_METHODS = [
   'offUploadProgress',
   'onRestoreProgress',
   'offRestoreProgress',
+  'onImportProgress',
+  'offImportProgress',
   'onPreviewReady',
   'offPreviewReady'
 ] as const
@@ -207,12 +220,14 @@ export const METHOD_TO_CHANNEL: Readonly<Record<ExposedMethod, IpcChannel>> = {
   cancelArchive: IPC_CHANNELS.archiveCancel,
   getArchiveStatus: IPC_CHANNELS.archiveStatus,
   reconcileLibrary: IPC_CHANNELS.archiveReconcile,
+  importLibraryIndex: IPC_CHANNELS.libraryImportIndex,
   getLibraryCopyState: IPC_CHANNELS.libraryCopyState,
   pickExportDir: IPC_CHANNELS.exportPickDir,
   startExport: IPC_CHANNELS.exportStart,
   cancelExport: IPC_CHANNELS.exportCancel,
   getExportStatus: IPC_CHANNELS.exportStatus,
   connectRemote: IPC_CHANNELS.syncConnect,
+  pickRemoteFolder: IPC_CHANNELS.syncPickFolder,
   disconnectRemote: IPC_CHANNELS.syncDisconnect,
   getRemoteState: IPC_CHANNELS.syncState,
   startUpload: IPC_CHANNELS.uploadStart,
@@ -283,9 +298,14 @@ export interface ExportDirStateDto {
 }
 
 export interface ConnectRemotePayload {
-  readonly baseUrl: string
-  readonly username: string
-  readonly password: string
+  /** 不传按 webdav 处理（老调用方的兼容路径） */
+  readonly kind?: RemoteKind
+  /** WebDAV 地址；kind 为 folder 时忽略 */
+  readonly baseUrl?: string
+  /** 文件夹远端的绝对路径；kind 为 folder 时必填 */
+  readonly folderPath?: string
+  readonly username?: string
+  readonly password?: string
   readonly libraryId?: string | null
 }
 
@@ -348,6 +368,8 @@ export interface RendererApi {
   getArchiveStatus(): Promise<IpcResult<ArchiveStatusDto>>
   reconcileLibrary(): Promise<IpcResult<ReconcileResultDto>>
   getLibraryCopyState(): Promise<IpcResult<LibraryCopyStateDto>>
+  /** 从图库目录里的说明文件重建索引（换机器、图库放在网络盘时用） */
+  importLibraryIndex(payload?: ImportLibraryPayload): Promise<IpcResult<ImportLibrarySummaryDto>>
 
   pickExportDir(): Promise<IpcResult<ExportDirStateDto>>
   startExport(payload: ExportStartPayload): Promise<IpcResult<ExportSummaryDto>>
@@ -355,6 +377,8 @@ export interface RendererApi {
   getExportStatus(): Promise<IpcResult<ExportStatusDto>>
 
   connectRemote(payload: ConnectRemotePayload): Promise<IpcResult<RemoteConnectionDto>>
+  /** 选择文件夹远端的目录（取消返回 null） */
+  pickRemoteFolder(): Promise<IpcResult<string | null>>
   disconnectRemote(): Promise<IpcResult<RemoteStateDto>>
   getRemoteState(): Promise<IpcResult<RemoteStateDto>>
   startUpload(payload?: UploadStartPayload): Promise<IpcResult<UploadSummaryDto>>
@@ -378,6 +402,8 @@ export interface RendererApi {
   onRestoreProgress(listener: (status: RestoreStatusDto) => void): void
   offRestoreProgress(): void
   /** 某张图的预览已生成，界面可以换成更清晰也更轻的预览 */
+  onImportProgress(listener: (progress: ImportLibraryProgressDto) => void): void
+  offImportProgress(): void
   onPreviewReady(listener: (payload: PreviewReadyPayload) => void): void
   offPreviewReady(): void
 }

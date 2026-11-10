@@ -7,9 +7,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { app, dialog, ipcMain, net } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net } from 'electron'
 import { AppError, ok, toErr } from '@shared/errors'
-import { IPC_CHANNELS } from '@shared/ipc'
+import { IPC_CHANNELS, IPC_EVENTS } from '@shared/ipc'
 import { getSteamScreenshotTargets, previewSteamScreenshotRestore, runSteamScreenshotRestore, getSteamScreenshotState, cancelSteamScreenshotRestore, undoSteamScreenshotRestore, assertScreenshotRestoreIdle } from './steam-screenshot-job'
 import { parseSteamScreenshotPreview, parseSteamScreenshotJob } from './payloads'
 import type {
@@ -19,6 +19,8 @@ import type {
   ArchiveSummaryDto,
   ExportStatusDto,
   ExportSummaryDto,
+  ImportLibraryPayload,
+  ImportLibrarySummaryDto,
   LibraryCopyStateDto,
   PreviewStatsDto,
   SteamKeyStatusDto,
@@ -61,6 +63,7 @@ import {
 } from '@core/library/queries'
 import type { AssetSummary } from '@core/library/queries'
 import { assetUrl, miniUrl, thumbnailUrl } from './asset-protocol'
+import { importLibraryIndex } from '@core/library/import'
 import type { SqliteDatabase } from '@core/db/sqlite'
 import { getAppContext } from './app-context'
 import { applyLoginItem } from './login-item'
@@ -368,6 +371,55 @@ export function registerIpcHandlers(): void {
     return { root: check.normalized, selectedAt: new Date().toISOString() }
   })
 
+  handle(IPC_CHANNELS.libraryImportIndex, async (payload): Promise<ImportLibrarySummaryDto> => {
+    const { database, paths } = getAppContext()
+    const input = payload as ImportLibraryPayload | undefined
+    const settings = readSettings(database.db)
+    const rootPath =
+      typeof input?.rootPath === 'string' && input.rootPath.length > 0
+        ? input.rootPath
+        : settings.libraryRoot
+    if (!rootPath) {
+      throw new AppError('LIB_PATH_INVALID', '还没有选择图库目录')
+    }
+    if (settings.libraryRoot !== rootPath) {
+      // 导入的目录同时成为图库目录，否则原图按另一个根解析会读不到
+      const check = checkLibraryRoot({
+        candidate: rootPath,
+        protectedRoots: resolveProtectedRoots(paths),
+        sourceRoots: []
+      })
+      if (!check.ok) {
+        throw new AppError('LIB_PATH_INVALID', check.reason)
+      }
+    }
+
+    const summary = await importLibraryIndex(database.db, {
+      libraryRoot: rootPath,
+      onProgress: (progress) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.isDestroyed()) {
+            window.webContents.send(IPC_EVENTS.importProgress, progress)
+          }
+        }
+      }
+    })
+    if (settings.libraryRoot !== summary.libraryRoot) {
+      writeSettings(database.db, { libraryRoot: summary.libraryRoot })
+    }
+    return {
+      libraryRoot: summary.libraryRoot,
+      scanned: summary.scanned,
+      imported: summary.imported,
+      skipped: summary.skipped,
+      failed: summary.failed,
+      games: summary.games,
+      accounts: summary.accounts,
+      durationMs: summary.durationMs,
+      failures: summary.failures
+    }
+  })
+
   handle(IPC_CHANNELS.dbHealth, (): DbHealth => {
     const { database } = getAppContext()
     return database.health()
@@ -520,6 +572,17 @@ export function registerIpcHandlers(): void {
 
   handle(IPC_CHANNELS.syncConnect, async (payload): Promise<RemoteConnectionDto> => {
     return connectRemote(parseConnectRemote(payload))
+  })
+
+  handle(IPC_CHANNELS.syncPickFolder, async (): Promise<string | null> => {
+    const picked = await dialog.showOpenDialog({
+      title: '选择远端备份目录（可以是 NAS 共享或已映射的网络盘）',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (picked.canceled || picked.filePaths.length === 0) {
+      return null
+    }
+    return picked.filePaths[0] ?? null
   })
 
   handle(IPC_CHANNELS.syncDisconnect, (): RemoteStateDto => disconnectRemote())

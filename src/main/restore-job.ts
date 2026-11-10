@@ -1,7 +1,7 @@
 /**
  * 远端恢复任务编排（主进程）。
  *
- * 读远端清单与执行恢复都走真实 WebDAV；同一时刻只允许一个恢复任务。
+ * 读远端清单与执行恢复都走当前远端（WebDAV 或文件夹）；同一时刻只允许一个恢复任务。
  * 清单缓存在内存中，界面选完游戏后再执行，避免每次点击都重新遍历远端。
  */
 
@@ -15,11 +15,11 @@ import type {
   RestoreSummaryDto
 } from '@shared/types'
 import { readSettings } from '@core/settings/settings-store'
-import { loadCredential } from '@core/sync/credentials'
 import { listRemoteRecords, planRestoreGames, restoreAssets } from '@core/sync/restore'
 import type { RemoteRecordEntry } from '@core/sync/restore'
-import { DavClient } from '@core/sync/webdav'
+import type { RemoteClient } from '@core/sync/remote-client'
 import { getAppContext } from './app-context'
+import { openRemote } from './sync-job'
 
 let restoreJob: { cancelRequested: boolean } | null = null
 let restoreStatus: RestoreStatusDto = idleRestoreStatus()
@@ -52,39 +52,23 @@ function broadcast(channel: string, payload: unknown): void {
 }
 
 interface RemoteContext {
-  client: DavClient
+  client: RemoteClient
   libraryId: string
   libraryRoot: string
 }
 
 function buildRemoteContext(): RemoteContext {
-  const { database, paths } = getAppContext()
+  const { database } = getAppContext()
   const settings = readSettings(database.db)
   if (!settings.libraryRoot) {
     throw new AppError('LIB_PATH_INVALID', '尚未选择图库目录，恢复需要先确定本地图库位置')
   }
 
-  const row = database.db
-    .prepare(
-      `SELECT remote_id AS remoteId, library_id AS libraryId, base_url AS baseUrl, root_path AS rootPath,
-              credential_ref AS credentialRef
-         FROM remotes ORDER BY created_at LIMIT 1`
-    )
-    .get() as
-    | { remoteId: string; libraryId: string; baseUrl: string; rootPath: string; credentialRef: string }
-    | undefined
-
-  if (!row || row.credentialRef.length === 0) {
-    throw new AppError('IPC_INVALID_INPUT', '尚未连接远端存储')
-  }
-  const credential = loadCredential(paths.dataDir, row.credentialRef)
-  if (!credential) {
-    throw new AppError('DAV_AUTH', '本机没有可用凭据，请重新连接远端存储')
-  }
-
+  // WebDAV 与文件夹远端在这里没有区别：都是 RemoteClient
+  const remote = openRemote()
   return {
-    client: new DavClient({ baseUrl: row.baseUrl, rootPath: row.rootPath, credential }),
-    libraryId: row.libraryId,
+    client: remote.store,
+    libraryId: remote.libraryId,
     libraryRoot: settings.libraryRoot
   }
 }

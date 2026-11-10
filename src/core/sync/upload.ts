@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AppError } from '@shared/errors'
 import type { SqliteDatabase } from '../db/sqlite'
-import { DavClient } from './webdav'
+import type { RemoteClient } from './remote-client'
 import {
   buildObjectKey,
   buildRecord,
@@ -82,7 +82,7 @@ export interface UploadOptions {
   readonly libraryId: string
   readonly deviceId: string
   readonly libraryRoot: string
-  readonly client: DavClient
+  readonly client: RemoteClient
   readonly concurrency?: number
   readonly maxAttempts?: number
   readonly forceRetry?: boolean
@@ -284,7 +284,7 @@ export function backoffMs(attempt: number, retryAfterMs?: number): number {
 
 /** 把本地文件下载到临时目录并计算哈希，用于回读校验。 */
 async function readBackAndHash(
-  client: DavClient,
+  client: RemoteClient,
   relativePath: string
 ): Promise<{ sha256: string; bytes: number } | null> {
   const tempDir = mkdtempSync(join(tmpdir(), 'ssm-verify-'))

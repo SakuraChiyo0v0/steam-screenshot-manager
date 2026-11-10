@@ -12,6 +12,8 @@ export type GameNameSource =
   | 'steam-api'
   | 'app-manifest'
   | 'appinfo'
+  /** 从图库说明文件（metadata/*.json）里读回来的名字，与本地清单同等可信 */
+  | 'library-metadata'
   | 'fallback'
 
 const RANK: Record<GameNameSource, number> = {
@@ -20,6 +22,7 @@ const RANK: Record<GameNameSource, number> = {
   'steam-api': 3,
   'app-manifest': 2,
   appinfo: 2,
+  'library-metadata': 2,
   fallback: 0
 }
 

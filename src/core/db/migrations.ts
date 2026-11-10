@@ -241,6 +241,17 @@ export const MIGRATIONS: readonly Migration[] = [
        WHERE name = game_key`
       ).run()
     }
+  },
+  {
+    version: 7,
+    description: 'remotes 增加 kind：远端可以是 WebDAV，也可以是一个文件夹',
+    up(db) {
+      const columns = db.prepare('PRAGMA table_info(remotes)').all() as { name: string }[]
+      if (!columns.some((column) => column.name === 'kind')) {
+        // 老记录一律是 WebDAV：base_url 存的是完整 URL
+        db.exec(`ALTER TABLE remotes ADD COLUMN kind TEXT NOT NULL DEFAULT 'webdav'`)
+      }
+    }
   }
 ]
 export interface MigrationOutcome {
