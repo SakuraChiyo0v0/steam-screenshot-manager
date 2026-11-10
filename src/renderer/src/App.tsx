@@ -1416,7 +1416,6 @@ export function App() {
                   ) : (
                     <button
                       className="primary"
-                      disabled={!remoteState?.libraryRoot}
                       onClick={() => void startUpload(false)}
                     >
                       {syncSummary && syncSummary.pending > 0
@@ -1443,8 +1442,8 @@ export function App() {
                     </strong>
                   </div>
                   <div className="stat">
-                    <span className="muted">图库里共</span>
-                    <strong>{syncSummary?.localCount ?? 0}</strong>
+                    <span className="muted">可备份</span>
+                    <strong>{syncSummary?.indexedCount ?? 0}</strong>
                   </div>
                 </div>
 
@@ -1454,9 +1453,7 @@ export function App() {
                     ? ` 最近一次成功：${new Date(syncSummary.lastBackupAt).toLocaleString()}。`
                     : ''}
                 </p>
-                {!remoteState?.libraryRoot && (
-                  <p className="panel-note">还没有本机图库：先在设置里选目录并归档，再备份。</p>
-                )}
+
                 {uploadStatus?.errorMessage && (
                   <p className="panel-note">上次错误：{describeError(uploadStatus.errorMessage)}</p>
                 )}

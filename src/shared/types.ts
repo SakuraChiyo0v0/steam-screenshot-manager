@@ -346,6 +346,8 @@ export interface SyncSummaryDto {
   /** 远端记录里能读到的资产数（来自本机记录表，不实时扫描远端） */
   readonly remoteCount: number
   readonly lastBackupAt: string | null
+  /** 配了几个备份地址 */
+  readonly targetCount?: number
   readonly libraryRoot: string | null
   readonly remoteKind: RemoteKind | null
   readonly remoteBaseUrl: string | null

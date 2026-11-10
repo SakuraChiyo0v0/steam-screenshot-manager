@@ -285,6 +285,7 @@ export function syncSummary(): SyncSummaryDto {
     failed: counts.failed,
     remoteCount: counts.verified,
     lastBackupAt: lastRow.at,
+    targetCount: listRemoteRows().length,
     libraryRoot: settings.libraryRoot,
     remoteKind: row?.kind ?? null,
     remoteBaseUrl: row?.baseUrl ?? null
@@ -555,15 +556,15 @@ export function cancelUpload(): UploadStatusDto {
 export function countPendingUploads(forceRetry: boolean): number {
   const { database } = getAppContext()
   const row = readRemoteRow()
-  const settings = readSettings(database.db)
-  if (!row || !settings.libraryRoot) {
+  if (!row) {
     return 0
   }
+  const settings = readSettings(database.db)
   return planUpload(database.db, {
     remoteId: row.remoteId,
     libraryId: row.libraryId,
     deviceId: getAppContext().device.deviceId,
-    libraryRoot: settings.libraryRoot,
+    libraryRoot: settings.libraryRoot ?? '',
     forceRetry
   }).length
 }
@@ -575,9 +576,8 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
 
   const { database, device } = getAppContext()
   const settings = readSettings(database.db)
-  if (!settings.libraryRoot) {
-    throw new AppError('LIB_PATH_INVALID', '还没有可备份的截图；先扫描一次来源')
-  }
+  // 图库只是可选的本地副本；没有它就直接读 Steam 来源里的原图
+  const libraryRoot = settings.libraryRoot ?? ''
 
   // 备份地址可以有多个：本机盘、NAS 共享、WebDAV 混搭。逐个跑，互不影响。
   const rows = listRemoteRows().filter((row) => {
@@ -635,7 +635,7 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
         remoteId: row.remoteId,
         libraryId: row.libraryId,
         deviceId: device.deviceId,
-        libraryRoot: settings.libraryRoot,
+        libraryRoot,
         client,
         forceRetry: input.forceRetry === true,
         onProgress: (progress) => {

@@ -1,6 +1,5 @@
-import { ArrowRightIcon, CloudArrowUpIcon, FolderIcon, GameControllerIcon } from '@phosphor-icons/react'
+import { ArrowRightIcon, CloudArrowUpIcon, GameControllerIcon } from '@phosphor-icons/react'
 import type { SyncSummaryDto } from '@shared/types'
-import { formatBytes } from './view-model'
 
 /**
  * 同步链路图：一眼看清"哪边到哪边"。
@@ -9,7 +8,6 @@ import { formatBytes } from './view-model'
  * 这里把它们按数据流向排成一条线，箭头下面写明这一步在做什么。
  */
 export function SyncOverview({ summary }: { summary: SyncSummaryDto | null }) {
-  const local = summary?.localCount ?? 0
   const verified = summary?.verified ?? 0
   const pending = summary?.pending ?? 0
   const indexed = summary?.indexedCount ?? 0
@@ -24,36 +22,20 @@ export function SyncOverview({ summary }: { summary: SyncSummaryDto | null }) {
           <small className="muted">只读，不会改动</small>
         </div>
         <div className="flow-link">
-          <span>扫描 → 归档</span>
-          <ArrowRightIcon size={18} />
-        </div>
-        <div className="flow-node">
-          <FolderIcon size={22} />
-          <strong>本机图库</strong>
-          <span className="flow-count">{local} 张</span>
-          <small className="muted">
-            {summary?.localBytes ? formatBytes(summary.localBytes) : '独立副本'}
-          </small>
-        </div>
-        <div className="flow-link">
           <span>{pending > 0 ? `待备份 ${pending} 张 →` : '备份 →'}</span>
           <ArrowRightIcon size={18} />
         </div>
         <div className="flow-node">
           <CloudArrowUpIcon size={22} />
-          <strong>远端备份</strong>
+          <strong>备份地址</strong>
           <span className="flow-count">{verified} 张</span>
           <small className="muted">
-            {summary?.remoteKind === 'folder'
-              ? '文件夹'
-              : summary?.remoteKind === 'webdav'
-                ? 'WebDAV'
-                : '未配置'}
+            {summary?.targetCount ? `${summary.targetCount} 个地址` : '未配置'}
           </small>
         </div>
       </div>
       <p className="flow-note muted">
-        备份把图库里的原图复制到远端；恢复是反方向：远端 → 本机图库 → Steam。本机删除不会传播到远端。
+        备份把 Steam 里的原图直接写到备份地址；恢复是反方向：备份地址 → Steam。本机删除不会传播到备份。
         {summary?.lastBackupAt
           ? ` 最近一次成功备份：${new Date(summary.lastBackupAt).toLocaleString()}`
           : ' 还没有成功备份过。'}

@@ -81,6 +81,7 @@ export interface UploadOptions {
   readonly remoteId: string
   readonly libraryId: string
   readonly deviceId: string
+  /** 图库目录；没有归档副本时会直接读来源，留空即可 */
   readonly libraryRoot: string
   readonly client: RemoteClient
   readonly concurrency?: number
@@ -121,17 +122,28 @@ function readCandidateRows(
          a.capture_time_source AS captureTimeSource,
          a.original_filename   AS originalFilename,
          lc.relative_path      AS localRelativePath,
-         lc.library_root       AS libraryRoot
-       FROM local_copies lc
-       JOIN assets a ON a.asset_id = lc.asset_id
+         lc.library_root       AS libraryRoot,
+         sf.relative_path      AS sourceRelativePath,
+         s.root_path           AS sourceRoot
+       FROM assets a
        JOIN games g ON g.game_key = a.game_key
+       LEFT JOIN local_copies lc
+              ON lc.asset_id = a.asset_id AND lc.present = 1 AND lc.library_root = ?
+       LEFT JOIN source_files sf
+              ON sf.source_file_id = (
+                   SELECT sf2.source_file_id FROM source_files sf2
+                    WHERE sf2.asset_id = a.asset_id AND sf2.present = 1
+                    ORDER BY sf2.last_seen_at DESC, sf2.relative_path
+                    LIMIT 1
+                 )
+       LEFT JOIN sources s ON s.source_id = sf.source_id
        LEFT JOIN remote_objects ro
               ON ro.asset_id = a.asset_id AND ro.remote_id = ?
-      WHERE lc.present = 1 AND lc.library_root = ?
+      WHERE (lc.present = 1 OR sf.source_file_id IS NOT NULL)
         AND (ro.remote_object_id IS NULL OR ro.publish_status <> 'verified')
       ORDER BY a.game_key, COALESCE(a.captured_at, ''), a.asset_id`
     )
-    .all(input.remoteId, input.libraryRoot)
+    .all(input.libraryRoot, input.remoteId)
 
   const now = Date.now()
   const candidates: UploadCandidate[] = []
@@ -148,7 +160,11 @@ function readCandidateRows(
       }
     }
 
-    const localRelativePath = String(row.localRelativePath)
+    // 优先用图库副本；没有副本就直接读 Steam 来源里的原图（不需要先归档）
+    const hasCopy = row.localRelativePath !== null && row.localRelativePath !== undefined
+    const localRelativePath = hasCopy
+      ? String(row.localRelativePath)
+      : String(row.sourceRelativePath)
     const fileName = localRelativePath.slice(localRelativePath.lastIndexOf('/') + 1)
     // 原文件名以资产记录为准（来源文件名），图库路径的文件名是指纹，不能当成原名
     const originalFilename =
@@ -183,7 +199,9 @@ function readCandidateRows(
       capturedAt: row.capturedAt === null ? null : String(row.capturedAt),
       captureTimeSource: String(row.captureTimeSource),
       originalFilename,
-      localFilePath: join(String(row.libraryRoot), ...localRelativePath.split('/')),
+      localFilePath: hasCopy
+        ? join(String(row.libraryRoot), ...localRelativePath.split('/'))
+        : join(String(row.sourceRoot), ...localRelativePath.split(/[\\/]/)),
       uploadId,
       objectKey,
       recordId,
