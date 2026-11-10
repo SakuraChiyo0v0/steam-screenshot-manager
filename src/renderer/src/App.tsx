@@ -779,8 +779,11 @@ export function App() {
     setToast(forceRetry ? '正在重试失败项…' : '备份已开始，可以继续浏览界面。')
     try {
       const summary = await call((api) => api.startUpload(forceRetry ? { forceRetry: true } : {}))
+      const skipped = summary.unavailableTargets ?? []
       setToast(
-        `备份完成：计划 ${summary.total}，已校验 ${summary.verified}（新传 ${summary.uploaded}），失败 ${summary.failed}，耗时 ${(summary.durationMs / 1000).toFixed(1)} 秒${summary.cancelled ? '（已取消）' : ''}${summary.abortedByAuth ? '（远端拒绝认证）' : ''}。`
+        `备份完成：计划 ${summary.total}，已校验 ${summary.verified}（新传 ${summary.uploaded}），失败 ${summary.failed}，耗时 ${(summary.durationMs / 1000).toFixed(1)} 秒${summary.cancelled ? '（已取消）' : ''}${summary.abortedByAuth ? '（远端拒绝认证）' : ''}${
+          skipped.length > 0 ? `；这轮取不到、已跳过：${skipped.join('、')}` : ''
+        }`
       )
       await refreshRemoteState()
     } catch (error) {

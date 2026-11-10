@@ -44,7 +44,11 @@ export function SyncOverview({ summary }: { summary: SyncSummaryDto | null }) {
           <strong>远端备份</strong>
           <span className="flow-count">{verified} 张</span>
           <small className="muted">
-            {summary?.remoteKind === 'folder' ? '文件夹' : summary?.remoteKind === 'webdav' ? 'WebDAV' : '未连接'}
+            {summary?.remoteKind === 'folder'
+              ? '文件夹'
+              : summary?.remoteKind === 'webdav'
+                ? 'WebDAV'
+                : '未配置'}
           </small>
         </div>
       </div>

@@ -28,6 +28,10 @@ const MESSAGES: Record<string, { title: string; hint: string }> = {
     title: '远端这个路径用不了',
     hint: '用「浏览」直接选一个能写的目录，别手写路径。'
   },
+  BACKUP_TARGET_UNAVAILABLE: {
+    title: '有个备份地址暂时取不到',
+    hint: '盘没挂上或共享掉线了；其它地址照常备份，恢复后再跑一次即可。'
+  },
   DAV_TIMEOUT: {
     title: '连不上远端',
     hint: '确认 NAS 在线、地址和端口正确；外网请检查中继或端口转发。'

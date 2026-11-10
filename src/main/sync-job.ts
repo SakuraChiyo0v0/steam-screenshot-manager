@@ -121,7 +121,7 @@ function buildStore(row: RemoteRow): RemoteClient {
   if (row.kind === 'folder') {
     const usable = isUsableFolderRoot(row.baseUrl)
     if (!usable.ok) {
-      throw new AppError('LIB_PATH_INVALID', `远端目录不可用：${usable.reason}`)
+      throw new AppError('BACKUP_TARGET_UNAVAILABLE', `${row.baseUrl}：${usable.reason}`)
     }
     return new FolderRemoteClient(row.baseUrl)
   }
@@ -366,7 +366,7 @@ export async function connectRemote(input: {
   if (input.kind === 'folder') {
     const usable = isUsableFolderRoot(address)
     if (!usable.ok) {
-      throw new AppError('LIB_PATH_INVALID', `远端目录不可用：${usable.reason}`)
+      throw new AppError('BACKUP_TARGET_UNAVAILABLE', `${address}：${usable.reason}`)
     }
     // 备份目标不能就是图库目录本身，否则会把原图复制进它自己的子目录
     const problem = checkBackupTarget({
@@ -608,6 +608,7 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
   broadcast(IPC_EVENTS.uploadProgress, uploadStatus)
 
   const totals = { total: 0, verified: 0, uploaded: 0, failed: 0 }
+  const unavailableTargets: string[] = []
   let cancelled = false
   let abortedByAuth = false
   let lastError: AppError | null = null
@@ -624,7 +625,9 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
         client = buildStore(row)
       } catch (error) {
         // 单个目标不可用（盘没挂上、凭据失效）不应中断其它目标
+        // 记下来，但只要还有别的地址成功，就不把它当成整轮失败
         lastError = error instanceof AppError ? error : null
+        unavailableTargets.push(row.baseUrl)
         continue
       }
       const base = { ...totals }
@@ -673,10 +676,12 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
       verified: totals.verified,
       uploaded: totals.uploaded,
       failed: totals.failed,
-      errorCode: abortedByAuth ? 'DAV_AUTH' : lastError?.code ?? null,
+      errorCode: abortedByAuth ? 'DAV_AUTH' : totals.verified > 0 ? null : lastError?.code ?? null,
       errorMessage: abortedByAuth
         ? '远端拒绝认证，本轮已停止'
-        : lastError?.detail ?? lastError?.message ?? null
+        : totals.verified > 0
+          ? null
+          : lastError?.detail ?? lastError?.message ?? null
     }
     broadcast(IPC_EVENTS.uploadProgress, uploadStatus)
 
@@ -688,7 +693,8 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
       cancelled,
       abortedByAuth,
       durationMs: Date.now() - startedMs,
-      libraryId: rows[0]!.libraryId
+      libraryId: rows[0]!.libraryId,
+      unavailableTargets
     }
 
   } catch (error) {

@@ -443,6 +443,8 @@ export interface UploadStatusDto {
 }
 
 export interface UploadSummaryDto {
+  /** 本轮取不到、被跳过的备份地址 */
+  readonly unavailableTargets?: readonly string[]
   readonly total: number
   readonly verified: number
   readonly uploaded: number
