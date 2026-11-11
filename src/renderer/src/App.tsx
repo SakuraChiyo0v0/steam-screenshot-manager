@@ -132,14 +132,16 @@ export function App() {
   const [search, setSearch] = useState('')
   const [accountFilter, setAccountFilter] = useState<string | null>(null)
   const [installedFilter, setInstalledFilter] = useState<InstalledFilter>('all')
-  // 排序记忆：上次选的顺序下次进来还在（localStorage，按整机生效）
-  const [sort, setSort] = useState(() => {
+  // 排序记忆：游戏库（最近拍摄/游戏名称）与相册（最近/最早拍摄）各记各的
+  const readStored = (key: string): string => {
     try {
-      return window.localStorage.getItem('ssm.sort') ?? 'recent'
+      return window.localStorage.getItem(key) ?? 'recent'
     } catch {
       return 'recent'
     }
-  })
+  }
+  const [sortLibrary, setSortLibrary] = useState(() => readStored('ssm.sort.library'))
+  const [sortAlbum, setSortAlbum] = useState(() => readStored('ssm.sort.album'))
   /** 排序弹层：原生 select 的弹层由系统绘制，深色主题下是白底白字，改用 DOM 弹层统一跟随主题。 */
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const sortMenuRef = useRef<HTMLDivElement | null>(null)
@@ -224,11 +226,26 @@ export function App() {
   const installedParam = installedFilter === 'all' ? null : installedFilter === 'installed'
   useEffect(() => {
     try {
-      window.localStorage.setItem('ssm.sort', sort)
+      window.localStorage.setItem('ssm.sort.library', sortLibrary)
     } catch {
-      // 隐私模式等场景写不进去，忽略
+      // 隐私模式写不进去，忽略
     }
-  }, [sort])
+  }, [sortLibrary])
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('ssm.sort.album', sortAlbum)
+    } catch {
+      // 同上
+    }
+  }, [sortAlbum])
+
+  /** 游戏库用「名称/最近」，相册用「最近/最早」；两处分别记住 */
+  const inGameLibrary = page === 'library' && gameId === null
+  const sort = inGameLibrary ? sortLibrary : sortAlbum
+  const setSort = (next: string): void => {
+    if (inGameLibrary) setSortLibrary(next)
+    else setSortAlbum(next)
+  }
 
   const assetSort = sort === 'oldest' ? 'captured-asc' : 'captured-desc'
   const filtered = search.trim().length > 0 || accountFilter !== null || installedFilter !== 'all'
@@ -581,7 +598,7 @@ export function App() {
     setPage(next)
     setGameId(null)
     setSearch('')
-    setSort('recent')
+    // 排序按各自记忆保留，不再每次重置
     setDiagnostics(false)
   }
 
@@ -1037,8 +1054,7 @@ export function App() {
                 onClick={() => {
                   setGameId(null)
                   setSearch('')
-                  // 相册可切到最早拍摄，游戏库没有这个选项；返回时重置，否则排序按钮文字会变空
-                  setSort('recent')
+                  // 返回游戏库时沿用游戏库自己的排序记忆
                 }}
               >
                 <ArrowLeftIcon size={16} />
@@ -1200,7 +1216,7 @@ export function App() {
                         onClick={() => {
                           setGameId(game.key)
                           setSearch('')
-                          setSort('recent')
+                          // 进入相册时沿用相册自己的排序记忆
                         }}
                       >
                         <div className="card-image">
