@@ -3,6 +3,7 @@ import { ArrowClockwiseIcon, CheckCircleIcon, CloudArrowUpIcon, GameControllerIc
 import { describeError } from '@shared/messages'
 import type { JobSummaryDto, RemoteTargetDto, SyncStepDto, SyncSummaryDto } from '@shared/types'
 import { call, getApi } from './api'
+import { JobCenter } from './JobCenter'
 
 /**
  * 同步中心。
@@ -97,6 +98,9 @@ export function SyncCenter() {
 
   return (
     <div className="sync-stack">
+      {/* 进度只在这一页显示；离开页面任务照常跑，回来还能看到 */}
+      <JobCenter onFinished={() => void refresh()} />
+
       <section className="sync-hero">
         <div className="hero-main">
           <div className="hero-line">

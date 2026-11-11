@@ -61,7 +61,6 @@ import {
 import { Viewer } from './Viewer'
 import { Modal } from './Modal'
 import { RemoteBrowser } from './RemoteBrowser'
-import { JobCenter } from './JobCenter'
 import { SetupChecklist, type SetupStep } from './SetupChecklist'
 import { describeError } from '@shared/messages'
 import { Diagnostics } from './Diagnostics'
@@ -1090,8 +1089,6 @@ export function App() {
             </button>
           )}
         </header>
-
-        <JobCenter onFinished={() => void refreshMeta().then(() => refreshLibrary())} />
 
 
         {page === 'library' && !gameId && <SetupChecklist steps={setupSteps} />}
