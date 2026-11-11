@@ -311,7 +311,30 @@ async function runSyncAll(): Promise<SyncAllResult> {
       steps.push({ step: 'writeback', ok: true, count: 0, detail: 'Steam 正在运行，为安全起见跳过写回；退出 Steam 后再点一次即可' })
     } else {
       const target = candidates[0]!
-      const accountId = target.accounts[0]?.accountId
+      // 挑"本机真的有副本"的那个账号；Steam 可能同时有匿名目录与真实账号
+      const pickWithCopies = (accounts: { accountId: string }[]): string | undefined => {
+        const { database } = getAppContext()
+        const settings = readSettings(database.db)
+        const root = settings.libraryRoot ?? ''
+        if (!root) return accounts[0]?.accountId
+        const count = database.db.prepare(
+          `SELECT COUNT(*) AS n FROM assets a
+             JOIN local_copies lc ON lc.asset_id = a.asset_id AND lc.present = 1 AND lc.library_root = ?
+            WHERE a.account_key = ?`
+        )
+        let best: string | undefined
+        let bestCount = 0
+        for (const account of accounts) {
+          const row = count.get(root, `steam-${account.accountId}`) as { n: number } | undefined
+          const n = Number(row?.n ?? 0)
+          if (n > bestCount) {
+            bestCount = n
+            best = account.accountId
+          }
+        }
+        return best ?? accounts[0]?.accountId
+      }
+      const accountId = pickWithCopies(target.accounts)
       if (!accountId) {
         steps.push({ step: 'writeback', ok: true, count: 0, detail: '这个 Steam 没有可用账号，跳过写回' })
       } else {

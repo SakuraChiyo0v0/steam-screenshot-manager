@@ -48,7 +48,13 @@ export function getSteamScreenshotTargets(): SteamScreenshotTarget[] {
       const existing = [...targets.entries()].find(([, path]) => path === root.rootPath)
       const key = existing?.[0] ?? id
       targets.set(key, root.rootPath)
-      return { id: key, label: root.rootPath, accounts: root.accounts.map(account => ({ accountId: account.accountId, label: account.personaName ?? account.accountName ?? account.accountId })) }
+      return { id: key, label: root.rootPath, // userdata/0 是 Steam 的匿名账号，不是真实用户，不能作为恢复目标
+      accounts: root.accounts
+        .filter((account) => account.accountId !== '0')
+        .map((account) => ({
+          accountId: account.accountId,
+          label: account.personaName ?? account.accountName ?? account.accountId
+        })) }
     })
 }
 export async function previewSteamScreenshotRestore(input: { targetId: string; accountId: string; gameKeys: string[] }) {
