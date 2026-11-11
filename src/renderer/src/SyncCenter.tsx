@@ -45,7 +45,7 @@ export function SyncCenter() {
       try {
         const list = await call((api) => api.listJobs())
         setJobs(list)
-        const busy = list.some((job) => job.running && (job.id === 'scan' || job.id === 'upload' || job.id === 'restore'))
+        const busy = list.some((job) => job.running && (job.id === 'scan' || job.id === 'upload' || job.id === 'restore' || job.id === 'steamRestore'))
         setRunning(busy)
         if (wasRunning && !busy) {
           // 跑完了：取这一轮的结果并刷新数字

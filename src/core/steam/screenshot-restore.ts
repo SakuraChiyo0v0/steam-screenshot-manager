@@ -195,15 +195,22 @@ export async function executeSteamScreenshots(plan: ScreenshotPlan, options: {
         try { fsyncSync(fd) } finally { closeSync(fd) }
       }
       if (await hashExistingFile(temporary) !== sha256) throw new AppError('LIB_HASH_MISMATCH', '临时文件校验失败')
-      const file: JournalFile = { path, temporary, sha256, published: false }
-      journal.files.push(file); saveJournal(dir, journal)
       options.assertStopped(); safeSteamPath(plan.root, path)
       try { linkSync(temporary, path) } catch (error) {
-        journal.files.pop(); saveJournal(dir, journal); throw error
+        rmSync(temporary, { force: true })
+        throw error
       }
-      file.published = true; saveJournal(dir, journal)
+      // 日志写盘是这条链路里最贵的一步（整份 JSON 重写，O(n²)）。
+      // 改成每 25 个文件落一次盘：崩溃最多丢 25 条回滚记录，换来的是几十倍的写入减少。
+      journal.files.push({ path, temporary, sha256, published: true })
+      journalDirty += 1
+      if (journalDirty >= 25) {
+        saveJournal(dir, journal)
+        journalDirty = 0
+      }
     } catch (error) { if (!journal.files.some(file => file.temporary === temporary)) rmSync(temporary, { force: true }); throw error }
   }
+  let journalDirty = 0
   try {
     journal.status = 'applying'; saveJournal(dir, journal)
     for (const item of plan.items) {
@@ -212,6 +219,8 @@ export async function executeSteamScreenshots(plan: ScreenshotPlan, options: {
       if (!item.thumbnailExists) await publish(item.thumbnail, await options.thumbnail(item.asset.source, item.index.width, item.index.height))
       result.restored++; options.onProgress?.(result.restored, plan.items.length)
     }
+    saveJournal(dir, journal)
+    journalDirty = 0
     if (options.shouldCancel?.()) { result.cancelled = true; throw new Error('已取消恢复') }
     const indexPath = join(plan.target, 'screenshots.vdf')
     for (const file of journal.files) {
@@ -235,6 +244,8 @@ export async function executeSteamScreenshots(plan: ScreenshotPlan, options: {
     for (const file of journal.files) rmSync(file.temporary, { force: true })
     return result
   } catch (error) {
+    // 失败前把内存里的最新清单落盘，回滚才不会漏掉最后那一批（节流写入的代价）
+    try { saveJournal(dir, journal) } catch { /* 日志写不进去也要继续尝试回滚 */ }
     try { await rollbackSteamScreenshots(options.backupRoot, jobId, options.assertStopped); result.rolledBack = true } catch (rollbackError) {
       throw new AppError('APP_INTERNAL', `恢复失败；回滚需处理：${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}（任务 ${jobId}）`)
     }

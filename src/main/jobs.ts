@@ -16,9 +16,10 @@ import type { JobSummaryDto } from '@shared/types'
 import { cancelArchive, getArchiveStatus } from './archive-job'
 import { cancelRestore, getRestoreStatus } from './restore-job'
 import { cancelScan, getScanStatus } from './scan-job'
+import { cancelSteamScreenshotRestore, getSteamScreenshotState } from './steam-screenshot-job'
 import { cancelUpload, getUploadStatus } from './sync-job'
 
-export type JobId = 'scan' | 'archive' | 'upload' | 'restore'
+export type JobId = 'scan' | 'archive' | 'upload' | 'restore' | 'steamRestore'
 
 interface JobLike {
   readonly running: boolean
@@ -36,7 +37,8 @@ const TITLES: Record<JobId, string> = {
   scan: '扫描来源',
   archive: '归档到图库',
   upload: '备份到远端',
-  restore: '从远端恢复'
+  restore: '从远端恢复',
+  steamRestore: '写回 Steam'
 }
 
 function toSummary(id: JobId, status: JobLike): JobSummaryDto {
@@ -60,7 +62,8 @@ export function listJobs(): JobSummaryDto[] {
     toSummary('scan', getScanStatus() as unknown as JobLike),
     toSummary('archive', getArchiveStatus() as unknown as JobLike),
     toSummary('upload', getUploadStatus() as unknown as JobLike),
-    toSummary('restore', getRestoreStatus() as unknown as JobLike)
+    toSummary('restore', getRestoreStatus() as unknown as JobLike),
+    toSummary('steamRestore', steamJobLike())
   ]
 }
 
@@ -69,11 +72,28 @@ export function runningJobs(): JobSummaryDto[] {
   return listJobs().filter((job) => job.running)
 }
 
+/** 写回 Steam 的状态结构与其它任务不同，这里转成同一形状。 */
+function steamJobLike(): JobLike {
+  const state = getSteamScreenshotState()
+  return {
+    running: state.running,
+    processed: state.processed,
+    total: state.total,
+    currentFile: null,
+    startedAt: null,
+    finishedAt: null,
+    errorCode: state.error ? 'APP_INTERNAL' : null,
+    errorMessage: state.error ?? null,
+    phase: null
+  }
+}
+
 const CANCELLERS: Record<JobId, () => unknown> = {
   scan: cancelScan,
   archive: cancelArchive,
   upload: cancelUpload,
-  restore: cancelRestore
+  restore: cancelRestore,
+  steamRestore: cancelSteamScreenshotRestore
 }
 
 export function cancelJob(id: string): JobSummaryDto[] {
