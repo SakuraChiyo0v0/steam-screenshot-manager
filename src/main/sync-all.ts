@@ -10,7 +10,7 @@
  * 三条都不做删除：不会因为哪边少了就删另一边。
  * 第 3 步会改 Steam 的索引，因此**Steam 在运行时会跳过**并如实报告，不会偷偷动它。
  */
-import { rmSync } from 'node:fs'
+import { appendFileSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { AppError } from '@shared/errors'
 import { listSources } from '@core/library/index-writer'
@@ -161,25 +161,52 @@ function cleanupRedundantCopies(): number {
 
   const rows = database.db
     .prepare(
-      `SELECT lc.local_copy_id AS id, lc.relative_path AS relativePath
+      `SELECT lc.local_copy_id AS id, lc.relative_path AS relativePath, lc.bytes AS bytes,
+              s.root_path AS sourceRoot, sf.relative_path AS sourceRel
          FROM local_copies lc
          JOIN assets a ON a.asset_id = lc.asset_id
+         JOIN source_files sf ON sf.asset_id = a.asset_id AND sf.present = 1
+         JOIN sources s ON s.source_id = sf.source_id
         WHERE lc.library_root = ?
-          AND EXISTS (SELECT 1 FROM source_files sf
-                       WHERE sf.asset_id = a.asset_id AND sf.present = 1)`
+        GROUP BY lc.local_copy_id`
     )
-    .all(libraryRoot) as { id: string; relativePath: string }[]
+    .all(libraryRoot) as {
+    id: string
+    relativePath: string
+    bytes: number
+    sourceRoot: string
+    sourceRel: string
+  }[]
 
   if (rows.length === 0) return 0
   const remove = database.db.prepare('DELETE FROM local_copies WHERE local_copy_id = ?')
   let cleaned = 0
+  const log: string[] = []
   for (const row of rows) {
     try {
+      // 硬性安全条件：Steam 来源里必须真的存在这份原图，且大小与副本一致。
+      // 任何一条对不上就不删——宁可多占一份空间，也不能只剩一份还被删掉。
+      const sourcePath = join(row.sourceRoot, ...String(row.sourceRel).split(/[\\/]/))
+      const info = statSync(sourcePath)
+      if (!info.isFile() || info.size !== Number(row.bytes)) {
+        continue
+      }
       rmSync(join(libraryRoot, ...row.relativePath.split('/')), { force: true })
       remove.run(row.id)
+      log.push(row.relativePath)
       cleaned += 1
     } catch {
       // 单个失败不影响其余
+    }
+  }
+  if (log.length > 0) {
+    try {
+      const { paths } = getAppContext()
+      const logDir = join(paths.dataDir, 'logs')
+      mkdirSync(logDir, { recursive: true })
+      appendFileSync(join(logDir, 'cleanup-copies.log'), `${new Date().toISOString()} 清理 ${log.length} 份临时副本\n${log.join('\n')}\n`)
+    } catch {
+      // 日志失败不影响主流程
     }
   }
   return cleaned
