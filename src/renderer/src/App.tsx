@@ -132,7 +132,14 @@ export function App() {
   const [search, setSearch] = useState('')
   const [accountFilter, setAccountFilter] = useState<string | null>(null)
   const [installedFilter, setInstalledFilter] = useState<InstalledFilter>('all')
-  const [sort, setSort] = useState('recent')
+  // 排序记忆：上次选的顺序下次进来还在（localStorage，按整机生效）
+  const [sort, setSort] = useState(() => {
+    try {
+      return window.localStorage.getItem('ssm.sort') ?? 'recent'
+    } catch {
+      return 'recent'
+    }
+  })
   /** 排序弹层：原生 select 的弹层由系统绘制，深色主题下是白底白字，改用 DOM 弹层统一跟随主题。 */
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const sortMenuRef = useRef<HTMLDivElement | null>(null)
@@ -215,6 +222,14 @@ export function App() {
   const resolvedTheme = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme
   const hasApi = getApi() !== null
   const installedParam = installedFilter === 'all' ? null : installedFilter === 'installed'
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('ssm.sort', sort)
+    } catch {
+      // 隐私模式等场景写不进去，忽略
+    }
+  }, [sort])
+
   const assetSort = sort === 'oldest' ? 'captured-asc' : 'captured-desc'
   const filtered = search.trim().length > 0 || accountFilter !== null || installedFilter !== 'all'
 
@@ -1062,22 +1077,6 @@ export function App() {
 
         <JobCenter onFinished={() => void refreshMeta().then(() => refreshLibrary())} />
 
-        {scanRunning && (
-          <div className="connection-banner">
-            <span className="connection-icon">
-              <ArrowsClockwiseIcon size={26} />
-            </span>
-            <div>
-              <h2>正在扫描来源</h2>
-              <p>
-                {scanProgressLabel}
-                {scanStatus?.failed ? ` · 失败 ${scanStatus.failed}` : ''}
-                {scanStatus?.currentFile ? ` · ${scanStatus.currentFile}` : ''}
-              </p>
-            </div>
-            <button onClick={() => void cancelScan()}>取消扫描</button>
-          </div>
-        )}
 
         {page === 'library' && !gameId && <SetupChecklist steps={setupSteps} />}
 

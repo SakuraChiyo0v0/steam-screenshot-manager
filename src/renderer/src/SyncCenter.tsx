@@ -17,7 +17,7 @@ import { call, getApi } from './api'
 export function SyncCenter() {
   const [summary, setSummary] = useState<SyncSummaryDto | null>(null)
   const [targets, setTargets] = useState<RemoteTargetDto[]>([])
-  const [jobs, setJobs] = useState<JobSummaryDto[]>([])
+  const [, setJobs] = useState<JobSummaryDto[]>([])
   const [running, setRunning] = useState(false)
   const [note, setNote] = useState('')
   const [steps, setSteps] = useState<readonly SyncStepDto[]>([])
@@ -91,13 +91,6 @@ export function SyncCenter() {
     }
   }
 
-  const scanJob = jobs.find((job) => job.id === 'scan' && job.running)
-  const uploadJob = jobs.find((job) => job.id === 'upload' && job.running)
-  const progress = scanJob
-    ? { title: '正在读取 Steam 截图', job: scanJob }
-    : uploadJob
-      ? { title: '正在备份', job: uploadJob }
-      : null
 
   const total = summary?.indexedCount ?? 0
   const addressCount = targets.length
@@ -120,15 +113,6 @@ export function SyncCenter() {
             ? '还没有备份地址：先去设置里加一个（本机盘、NAS 共享或 WebDAV 都行）。'
             : `会推到 ${addressCount} 个备份地址，同时把备份里有、本机没有的取回来。只做并集：哪边都不会因为另一边少了而删除。`}
         </p>
-        {progress && (
-          <p className="hero-progress" role="status">
-            {progress.title}
-            {progress.job.total
-              ? ` · ${progress.job.processed}/${progress.job.total}`
-              : ` · 已处理 ${progress.job.processed}`}
-            {progress.job.currentFile ? ` · ${progress.job.currentFile}` : ''}
-          </p>
-        )}
         {note && <p className="hero-ok">{note}</p>}
         {steps.length > 0 && (
           <ul className="sync-steps">

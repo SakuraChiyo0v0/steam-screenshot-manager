@@ -16,6 +16,7 @@ import { chooseImageSource } from '@shared/image-source'
 import { readSettings } from '@core/settings/settings-store'
 import { getAppContext } from './app-context'
 import { notePreviewRequest, requestPreview } from './preview-queue'
+import { materializeAsset } from './asset-materialize'
 
 export const ASSET_SCHEME = 'ssm-asset'
 const ASSET_HOST = 'asset'
@@ -76,8 +77,13 @@ export function registerAssetProtocol(userDataRoot: string): void {
       }
 
       const { database } = getAppContext()
-      const location = findAssetLocation(database.db, assetId)
+      let location = findAssetLocation(database.db, assetId)
       if (!location) {
+        // 本机没有这张原图：从备份地址按需取回一次（只下这一张）
+        const fetched = await materializeAsset(assetId)
+        if (fetched) {
+          return await fileResponse(fetched)
+        }
         return new Response(null, { status: 404 })
       }
 
@@ -87,7 +93,15 @@ export function registerAssetProtocol(userDataRoot: string): void {
         userDataRoot
       })
 
-      const originalPath = await resolveExistingAssetPath(location.rootPath, location.relativePath)
+      let originalPath: string
+      try {
+        originalPath = await resolveExistingAssetPath(location.rootPath, location.relativePath)
+      } catch (error) {
+        // 索引里有、文件却不在了（删过本地副本）：按需取回后再给
+        const fetched = await materializeAsset(assetId)
+        if (!fetched) throw error
+        originalPath = fetched
+      }
 
       if (wantsThumbnail) {
         const size: PreviewSize = wantsMini ? 'mini' : 'preview'

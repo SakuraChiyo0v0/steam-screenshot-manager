@@ -1900,3 +1900,6 @@ dialog.remote-browser {
 .sync-steps li { display: flex; align-items: center; gap: 6px; }
 .sync-steps li.ok { color: var(--accent, #2f855a); }
 .sync-steps li.warn { color: #b7791f; }
+
+.job-stopall { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-size: 0.78rem; }
+.job-stopall button { padding: 4px 10px; font-size: 0.78rem; }

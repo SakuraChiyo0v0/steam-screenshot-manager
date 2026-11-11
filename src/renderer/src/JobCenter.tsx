@@ -76,8 +76,8 @@ export function JobCenter({ onFinished }: { onFinished?: () => void }) {
   return (
     <section className="job-center" aria-label="任务">
       {visible.some((job) => job.running) && (
-        <div className="job-row">
-          <span className="job-main muted small">有任务在跑；如果它一直不动，可以停掉重来。</span>
+        <div className="job-stopall">
+          <span className="muted small">任务卡住时可以一次停掉重来</span>
           <button type="button" disabled={busy} onClick={() => void stopAll()}>全部停止</button>
         </div>
       )}
