@@ -54,7 +54,7 @@ async function run(assetId: string): Promise<string | null> {
   if (existsSync(target)) return target
 
   try {
-    const remote = openRemote(String(object.remoteId))
+    const remote = await openRemote(String(object.remoteId))
     const temporary = `${target}.part-${device.deviceId.slice(0, 8)}`
     mkdirSync(dirname(target), { recursive: true })
     const downloaded = await remote.store.downloadToFile(String(object.objectKey), temporary)

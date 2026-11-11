@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { AppError } from '@shared/errors'
 import { listSources } from '@core/library/index-writer'
 import { readSettings } from '@core/settings/settings-store'
+import { completeGameNamesFromCache } from '@core/steam/app-names'
 import { getAppContext } from './app-context'
 import { cancelScan, startScan, getScanStatus } from './scan-job'
 import { cancelUpload, getUploadStatus, remoteTargets, runUpload } from './sync-job'
@@ -356,6 +357,13 @@ async function runSyncAll(): Promise<SyncAllResult> {
     } catch {
       // 清理失败不影响主流程
     }
+  }
+
+  // 同步完成后用本地名称缓存补一次名字（离线可用，不会联网）
+  try {
+    completeGameNamesFromCache(database.db, new Date().toISOString())
+  } catch {
+    // 忽略
   }
 
   return {

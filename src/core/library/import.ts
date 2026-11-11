@@ -18,6 +18,7 @@ import { join, resolve } from 'node:path'
 import { AppError } from '@shared/errors'
 import type { SqliteDatabase } from '../db/sqlite'
 import { shouldReplaceName } from './game-name'
+import { completeGameNamesFromCache } from '../steam/app-names'
 import { upsertLocalCopy } from './archive'
 
 export interface LibraryRecord {
@@ -373,6 +374,13 @@ export async function importLibraryIndex(
       }
     })
   })
+
+  // 商店名称缓存里如果有这些 AppID，顺手补上名字（纯本地，不联网）
+  try {
+    completeGameNamesFromCache(db, now)
+  } catch {
+    // 补名失败不影响导入
+  }
 
   const games = Number(
     (db.prepare('SELECT COUNT(*) AS total FROM games').get() as { total: number }).total

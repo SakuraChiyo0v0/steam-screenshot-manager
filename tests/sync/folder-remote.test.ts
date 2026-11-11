@@ -127,9 +127,9 @@ describe('文件夹远端', () => {
     expect(readdirSync(remoteRoot).filter((name) => name.startsWith('dav-probe-'))).toEqual([])
   })
 
-  it('远端根存在性检查给出可读原因', () => {
-    expect(isUsableFolderRoot(remoteRoot)).toEqual({ ok: true })
-    const missing = isUsableFolderRoot(join(workDir, '没有这个目录'))
+  it('远端根存在性检查给出可读原因', async () => {
+    expect(await isUsableFolderRoot(remoteRoot)).toEqual({ ok: true })
+    const missing = await isUsableFolderRoot(join(workDir, '没有这个目录'))
     expect(missing.ok).toBe(false)
     expect(missing.ok ? '' : missing.reason).toContain('不存在')
   })

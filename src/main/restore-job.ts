@@ -58,12 +58,12 @@ interface RemoteContext {
   libraryRoot: string
 }
 
-function buildRemoteContext(): RemoteContext {
+async function buildRemoteContext(): Promise<RemoteContext> {
   // 没有配置本地目录时用内部默认位置（用户数据目录下），不再逼用户先选一个
   const libraryRoot = ensureLibraryRoot()
 
   // WebDAV 与文件夹远端在这里没有区别：都是 RemoteClient
-  const remote = openRemote()
+  const remote = await openRemote()
   return {
     client: remote.store,
     libraryId: remote.libraryId,
@@ -100,7 +100,7 @@ export function getCachedCatalog(): RemoteCatalogDto | null {
 /** 读取远端记录清单并汇总成按游戏的恢复计划。 */
 export async function scanRemoteCatalog(): Promise<RemoteCatalogDto> {
   const { database } = getAppContext()
-  const context = buildRemoteContext()
+  const context = await buildRemoteContext()
 
   restoreStatus = {
     ...idleRestoreStatus(),
@@ -169,7 +169,7 @@ export async function runRestore(input: { gameKeys?: readonly string[] }): Promi
   }
 
   const { database } = getAppContext()
-  const context = buildRemoteContext()
+  const context = await buildRemoteContext()
   const remoteRow = database.db
     .prepare('SELECT remote_id AS remoteId FROM remotes ORDER BY created_at LIMIT 1')
     .get() as { remoteId: string } | undefined

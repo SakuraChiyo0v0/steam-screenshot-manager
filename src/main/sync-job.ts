@@ -117,9 +117,9 @@ function requireRemote(remoteId?: string): RemoteRow {
 }
 
 /** 按远端种类造客户端：WebDAV 走 HTTP + 凭据，文件夹远端直接读写目录。 */
-function buildStore(row: RemoteRow): RemoteClient {
+async function buildStore(row: RemoteRow): Promise<RemoteClient> {
   if (row.kind === 'folder') {
-    const usable = isUsableFolderRoot(row.baseUrl)
+    const usable = await isUsableFolderRoot(row.baseUrl)
     if (!usable.ok) {
       throw new AppError('BACKUP_TARGET_UNAVAILABLE', `${row.baseUrl}：${usable.reason}`)
     }
@@ -138,9 +138,11 @@ function buildStore(row: RemoteRow): RemoteClient {
 }
 
 /** 上传与恢复共用的入口：取当前已连接的远端（WebDAV 或文件夹）。 */
-export function openRemote(remoteId?: string): { store: RemoteClient; remoteId: string; libraryId: string } {
+export async function openRemote(
+  remoteId?: string
+): Promise<{ store: RemoteClient; remoteId: string; libraryId: string }> {
   const row = requireRemote(remoteId)
-  return { store: buildStore(row), remoteId: row.remoteId, libraryId: row.libraryId }
+  return { store: await buildStore(row), remoteId: row.remoteId, libraryId: row.libraryId }
 }
 
 /**
@@ -159,7 +161,7 @@ export async function browseRemote(input: {
   let store: RemoteClient
 
   if (input.kind === 'folder') {
-    const usable = isUsableFolderRoot(input.address)
+    const usable = await isUsableFolderRoot(input.address)
     if (!usable.ok) {
       throw new AppError('LIB_PATH_INVALID', `远端目录不可用：${usable.reason}`)
     }
@@ -365,7 +367,7 @@ export async function connectRemote(input: {
   const notes: CapabilityItem[] = []
 
   if (input.kind === 'folder') {
-    const usable = isUsableFolderRoot(address)
+    const usable = await isUsableFolderRoot(address)
     if (!usable.ok) {
       throw new AppError('BACKUP_TARGET_UNAVAILABLE', `${address}：${usable.reason}`)
     }
@@ -642,7 +644,7 @@ export async function runUpload(input: { forceRetry?: boolean }): Promise<Upload
       }
       let client: RemoteClient
       try {
-        client = buildStore(row)
+        client = await buildStore(row)
       } catch (error) {
         // 单个目标不可用（盘没挂上、凭据失效）不应中断其它目标
         // 记下来，但只要还有别的地址成功，就不把它当成整轮失败
