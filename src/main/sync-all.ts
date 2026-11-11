@@ -10,8 +10,11 @@
  * 三条都不做删除：不会因为哪边少了就删另一边。
  * 第 3 步会改 Steam 的索引，因此**Steam 在运行时会跳过**并如实报告，不会偷偷动它。
  */
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { AppError } from '@shared/errors'
 import { listSources } from '@core/library/index-writer'
+import { readSettings } from '@core/settings/settings-store'
 import { getAppContext } from './app-context'
 import { cancelScan, startScan, getScanStatus } from './scan-job'
 import { cancelUpload, getUploadStatus, remoteTargets, runUpload } from './sync-job'
@@ -144,6 +147,44 @@ export function getSyncAllState(): { running: boolean; last: SyncAllResult | nul
   return background
 }
 
+/**
+ * 删掉「Steam 来源里已经有同一张图」的内部副本。
+ *
+ * 恢复流程以前会把下载下来的原图长期留在用户数据目录；写回 Steam 之后那份就是重复的，
+ * 这里按「来源里已存在同指纹文件」精确删除，只动副本记录与它指向的文件。
+ */
+function cleanupRedundantCopies(): number {
+  const { database } = getAppContext()
+  const settings = readSettings(database.db)
+  const libraryRoot = settings.libraryRoot
+  if (!libraryRoot) return 0
+
+  const rows = database.db
+    .prepare(
+      `SELECT lc.local_copy_id AS id, lc.relative_path AS relativePath
+         FROM local_copies lc
+         JOIN assets a ON a.asset_id = lc.asset_id
+        WHERE lc.library_root = ?
+          AND EXISTS (SELECT 1 FROM source_files sf
+                       WHERE sf.asset_id = a.asset_id AND sf.present = 1)`
+    )
+    .all(libraryRoot) as { id: string; relativePath: string }[]
+
+  if (rows.length === 0) return 0
+  const remove = database.db.prepare('DELETE FROM local_copies WHERE local_copy_id = ?')
+  let cleaned = 0
+  for (const row of rows) {
+    try {
+      rmSync(join(libraryRoot, ...row.relativePath.split('/')), { force: true })
+      remove.run(row.id)
+      cleaned += 1
+    } catch {
+      // 单个失败不影响其余
+    }
+  }
+  return cleaned
+}
+
 async function runSyncAll(): Promise<SyncAllResult> {
   if (getScanStatus().running || getUploadStatus().running || getRestoreStatus().running) {
     throw new AppError('JOB_RUNNING', '同步已经在跑了，等它结束再点')
@@ -267,6 +308,27 @@ async function runSyncAll(): Promise<SyncAllResult> {
     }
   } catch (error) {
     steps.push({ step: 'writeback', ok: false, count: 0, detail: error instanceof Error ? error.message : String(error) })
+  }
+
+  // 写回 Steam 之后，内部分缓存里的原图已经"搬进" Steam 来源目录了：
+  // 重新扫一次来源让索引认得它们，然后把这些临时副本删掉，别让它长期占着用户数据目录。
+  if ((writtenBack ?? 0) > 0) {
+    try {
+      for (const source of sources) {
+        await startScan({ sourceId: source.sourceId, accountIds: [] }).catch(() => undefined)
+      }
+      const cleaned = cleanupRedundantCopies()
+      if (cleaned > 0) {
+        steps.push({
+          step: 'writeback',
+          ok: true,
+          count: writtenBack ?? 0,
+          detail: `写回 Steam ${writtenBack} 张；已清理临时副本 ${cleaned} 份`
+        })
+      }
+    } catch {
+      // 清理失败不影响主流程
+    }
   }
 
   return {
