@@ -93,9 +93,21 @@ export async function runSteamScreenshotRestore(planId: string) {
   assertSteamStopped()
   cachedPlan = null; cancel = false
   state.running = true; state.processed = 0; state.total = plan.items.length; state.result = null; state.error = null
+  /**
+   * 「Steam 是否已退出」的检查内部要跑 tasklist（两次进程枚举，每次几百毫秒）。
+   * 以前每写一个文件都查一遍，六千多张就是上万次进程枚举——既慢又可能卡住。
+   * 这里按时间节流：10 秒内复用上次结论。
+   */
+  let lastCheckAt = 0
+  const assertStoppedThrottled = (): void => {
+    const now = Date.now()
+    if (now - lastCheckAt < 10_000) return
+    assertSteamStopped()
+    lastCheckAt = now
+  }
   try {
     const result = await executeSteamScreenshots(plan, {
-      backupRoot: backupRoot(), assertStopped: assertSteamStopped,
+      backupRoot: backupRoot(), assertStopped: assertStoppedThrottled,
       shouldCancel: () => cancel, onProgress: (processed, total) => { state.processed = processed; state.total = total },
       thumbnail: async (source, width, height) => {
         const image = nativeImage.createFromPath(source)

@@ -261,6 +261,17 @@ async function runSyncAll(): Promise<SyncAllResult> {
   // ---- 2) 收：备份有、本机没有的取回来 ----
   let pulled = 0
   try {
+    const counts = database.db
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM assets) AS assets,
+                (SELECT COUNT(*) FROM remote_objects WHERE remote_id = ? AND publish_status = 'verified') AS verified`
+      )
+      .get(targets[0]!.remoteId) as { assets: number; verified: number }
+    if (counts.verified >= counts.assets) {
+      // 备份里有的本机都有：再扫一遍远端清单纯属浪费（几千次网络读取）
+      steps.push({ step: 'pull', ok: true, count: 0, detail: '备份与本机数量一致，无需取回' })
+      throw { skipPull: true }
+    }
     const catalog = await scanRemoteCatalog()
     // 只取「备份里有、本机没有」的那部分：本机已经有的游戏不进入恢复计划，
     // 否则会为了核对哈希把几千张图重新下载一遍（点一次同步要跑十几分钟，纯浪费）。
@@ -298,7 +309,16 @@ async function runSyncAll(): Promise<SyncAllResult> {
       })
     }
   } catch (error) {
-    steps.push({ step: 'pull', ok: false, count: 0, detail: error instanceof Error ? error.message : String(error) })
+    if ((error as { skipPull?: boolean }).skipPull) {
+      // 已经写过结论，无需再报错
+    } else {
+      steps.push({
+        step: 'pull',
+        ok: false,
+        count: 0,
+        detail: error instanceof Error ? error.message : String(error)
+      })
+    }
   }
 
   // ---- 3) 写回：本机有、Steam 里缺的 ----
@@ -338,9 +358,16 @@ async function runSyncAll(): Promise<SyncAllResult> {
       if (!accountId) {
         steps.push({ step: 'writeback', ok: true, count: 0, detail: '这个 Steam 没有可用账号，跳过写回' })
       } else {
-        const catalog = await scanRemoteCatalog()
-        // 写回只看「备份里有的游戏」太窄；用本机全部游戏，preview 会自己算 Steam 里缺哪些
-        const gameKeys = catalog.games.map((game) => game.gameKey)
+        // 写回只关心"本机有副本"的游戏，直接从数据库取，不用去远端扫一遍记录
+        const settings = readSettings(database.db)
+        const localGames = database.db
+          .prepare(
+            `SELECT DISTINCT a.game_key AS gameKey
+               FROM assets a
+               JOIN local_copies lc ON lc.asset_id = a.asset_id AND lc.present = 1 AND lc.library_root = ?`
+          )
+          .all(settings.libraryRoot ?? '') as { gameKey: string }[]
+        const gameKeys = localGames.map((row) => String(row.gameKey))
         const preview = await previewSteamScreenshotRestore({ targetId: target.id, accountId, gameKeys })
         if (preview.added === 0) {
           steps.push({ step: 'writeback', ok: true, count: 0, detail: 'Steam 里已经是最新的，不用写回' })
