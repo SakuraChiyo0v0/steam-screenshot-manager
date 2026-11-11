@@ -29,7 +29,7 @@ export const SUPPORTED_IMAGE_EXTENSIONS: readonly string[] = [
   '.tga'
 ]
 
-export type CaptureTimeSource = 'screenshot-index' | 'file-time' | 'unknown'
+export type CaptureTimeSource = 'filename' | 'screenshot-index' | 'file-time' | 'unknown'
 export type GameKind = 'steam' | 'non-steam'
 export type GameNameSource = 'app-manifest' | 'appinfo' | 'shortcut' | 'fallback'
 
@@ -252,10 +252,27 @@ interface PendingFile {
   readonly indexEntry: ScreenshotIndexEntry | undefined
 }
 
+/** Steam 的截图文件名就是拍摄时间（本地时区）：20260622091808_1.jpg */
+function parseFilenameCaptureTime(relativePath: string): string | null {
+  const name = relativePath.slice(relativePath.lastIndexOf('/') + 1)
+  const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_/.exec(name)
+  if (!match) return null
+  const [, y, mo, d, h, mi, sec] = match
+  const local = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(sec))
+  return Number.isFinite(local.getTime()) ? local.toISOString() : null
+}
+
 function resolveCaptureTime(
   indexEntry: ScreenshotIndexEntry | undefined,
-  mtimeMs: number
+  mtimeMs: number,
+  relativePath = ''
 ): { value: string | null; source: CaptureTimeSource } {
+  // 文件名里的时间最可信：它是 Steam 在截图那一刻按本地时区命名的，
+  // 而索引里的 creation 在换机/恢复后可能被写成"拷贝时刻"。
+  const fromName = relativePath ? parseFilenameCaptureTime(relativePath) : null
+  if (fromName) {
+    return { value: fromName, source: 'filename' }
+  }
   if (indexEntry?.creation && indexEntry.creation > 0) {
     return { value: new Date(indexEntry.creation * 1000).toISOString(), source: 'screenshot-index' }
   }
@@ -443,7 +460,7 @@ export async function scanSource(request: ScanRequest): Promise<ScanOutcome> {
       continue
     }
 
-    const captureTime = resolveCaptureTime(file.indexEntry, file.mtimeMs)
+    const captureTime = resolveCaptureTime(file.indexEntry, file.mtimeMs, file.relativePath)
 
     candidates.push({
       accountId: file.accountId,
